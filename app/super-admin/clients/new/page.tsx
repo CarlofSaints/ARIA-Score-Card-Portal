@@ -41,6 +41,10 @@ export default function NewClientPage() {
   const [forcePasswordChange, setForcePasswordChange] = useState(true);
   const [sendEmail, setSendEmail] = useState(true);
 
+  // Logo
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -132,6 +136,17 @@ export default function NewClientPage() {
       if (!res.ok) {
         setError(data.error || "Failed to create client");
         return;
+      }
+
+      // Upload logo if selected (needs slug from creation)
+      if (logoFile) {
+        const fd = new FormData();
+        fd.append("logo", logoFile);
+        await authFetch(`/api/super-admin/tenants/${slug}/logo`, {
+          method: "POST",
+          body: fd,
+          rawBody: true,
+        });
       }
 
       router.push("/super-admin");
@@ -238,6 +253,58 @@ export default function NewClientPage() {
               value={accentColor}
               onChange={setAccentColor}
             />
+          </div>
+
+          {/* Logo Upload */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-[#1A202C] mb-1.5">
+              Client Logo
+            </label>
+            <div className="flex items-center gap-4">
+              {logoPreview ? (
+                <img
+                  src={logoPreview}
+                  alt="Logo preview"
+                  className="w-16 h-16 object-contain rounded-lg border border-[#E2E8F0] bg-white p-1"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-lg border-2 border-dashed border-[#CBD5E0] flex items-center justify-center text-[#A0AEC0]">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                </div>
+              )}
+              <div>
+                <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[#E2E8F0] text-sm font-medium text-[#2D3748] hover:bg-[#F7FAFC] transition-colors">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  Choose File
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setLogoFile(file);
+                      if (file) {
+                        const url = URL.createObjectURL(file);
+                        setLogoPreview(url);
+                      } else {
+                        setLogoPreview(null);
+                      }
+                    }}
+                  />
+                </label>
+                {logoFile && (
+                  <p className="text-xs text-[#718096] mt-1">{logoFile.name}</p>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Preview */}

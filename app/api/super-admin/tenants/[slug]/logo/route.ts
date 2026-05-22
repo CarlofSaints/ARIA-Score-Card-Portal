@@ -27,9 +27,14 @@ export async function POST(
 
     const url = await writeBlob(key, bytes, file.type);
 
-    // Update tenant config with logo URL
+    // Update tenant config with logo URL — merge into existing branding
+    const { getTenantBySlug } = await import("@/lib/tenantConfig");
+    const existing = await getTenantBySlug(slug);
+    if (!existing) {
+      return Response.json({ error: "Tenant not found" }, { status: 404, headers: noCacheHeaders() });
+    }
     await updateTenant(slug, {
-      branding: { primaryColor: "", logoUrl: url }, // primaryColor will be merged
+      branding: { ...existing.branding, logoUrl: url },
     });
 
     return Response.json({ url }, { headers: noCacheHeaders() });

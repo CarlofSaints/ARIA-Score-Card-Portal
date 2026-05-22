@@ -77,17 +77,23 @@ export function useAuth() {
 
 /**
  * Fetch wrapper that includes credentials (cookies).
+ * Pass `rawBody: true` in options to skip Content-Type header (e.g. for FormData).
  */
 export async function authFetch(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit & { rawBody?: boolean } = {}
 ): Promise<Response> {
+  const { rawBody, ...fetchOptions } = options;
+  const headers: Record<string, string> = {};
+  if (!rawBody) {
+    headers["Content-Type"] = "application/json";
+  }
   return fetch(url, {
-    ...options,
+    ...fetchOptions,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
+      ...headers,
+      ...(fetchOptions.headers as Record<string, string>),
     },
   });
 }
