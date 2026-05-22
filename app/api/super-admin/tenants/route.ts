@@ -82,14 +82,12 @@ export async function POST(req: NextRequest) {
       // Send welcome email if requested
       if (sendEmail) {
         try {
-          const siteUrl = domains?.[0]
-            ? `https://${domains[0]}`
-            : process.env.NEXT_PUBLIC_SITE_URL || "";
           await sendWelcomeEmail({
             to: user.email,
             name: user.name,
             tenantName: name,
-            siteUrl,
+            tenantSlug: slug,
+            tenantDomains: domains,
             email: user.email,
             password: initialAdmin.password,
             forcePasswordChange: initialAdmin.forcePasswordChange ?? true,

@@ -12,16 +12,13 @@ export async function POST(req: NextRequest) {
 
     const config = await getTenantConfig(slug);
     const tenantName = config?.name || "ARIA Score Card";
-    const domain = config?.domains?.[0];
-    const siteUrl = domain
-      ? `https://${domain}`
-      : process.env.NEXT_PUBLIC_SITE_URL || "";
 
     await sendWelcomeEmail({
       to: email,
       name,
       tenantName,
-      siteUrl,
+      tenantSlug: slug,
+      tenantDomains: config?.domains,
       email,
       password,
       forcePasswordChange: forcePasswordChange ?? false,

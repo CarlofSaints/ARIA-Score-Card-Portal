@@ -10,12 +10,28 @@ function getResend(): Resend {
 
 const FROM = "ARIA Score Card <noreply@outerjoin.co.za>";
 const ARIA_LOGO = "https://aria-score-card-portal.vercel.app/aria-logo.png";
+const BASE_DOMAIN = "ariascorecard.co.za";
+
+/**
+ * Build the tenant's portal URL.
+ * Priority: 1) explicit custom domain, 2) slug.ariascorecard.co.za, 3) NEXT_PUBLIC_SITE_URL fallback
+ */
+export function getTenantUrl(slug: string, domains?: string[]): string {
+  if (domains && domains.length > 0) {
+    return `https://${domains[0]}`;
+  }
+  if (slug) {
+    return `https://${slug}.${BASE_DOMAIN}`;
+  }
+  return process.env.NEXT_PUBLIC_SITE_URL || "";
+}
 
 export async function sendWelcomeEmail(params: {
   to: string;
   name: string;
   tenantName: string;
-  siteUrl: string;
+  tenantSlug: string;
+  tenantDomains?: string[];
   email: string;
   password: string;
   forcePasswordChange: boolean;
@@ -26,7 +42,8 @@ export async function sendWelcomeEmail(params: {
   const primary = params.branding?.primaryColor || "#3D6273";
   const accent = params.branding?.accentColor || "#E04E2A";
   const clientLogo = params.branding?.logoUrl;
-  const loginUrl = params.siteUrl ? `${params.siteUrl}/login` : "";
+  const siteUrl = getTenantUrl(params.tenantSlug, params.tenantDomains);
+  const loginUrl = siteUrl ? `${siteUrl}/login` : "";
 
   // Build module list
   const enabledSet = new Set(params.enabledModules || []);
