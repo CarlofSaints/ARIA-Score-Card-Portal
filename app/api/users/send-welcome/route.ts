@@ -25,6 +25,8 @@ export async function POST(req: NextRequest) {
       email,
       password,
       forcePasswordChange: forcePasswordChange ?? false,
+      branding: config?.branding,
+      enabledModules: config?.enabledModules,
     });
 
     return Response.json({ success: true }, { headers: noCacheHeaders() });

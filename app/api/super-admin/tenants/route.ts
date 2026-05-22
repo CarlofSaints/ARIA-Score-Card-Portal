@@ -93,6 +93,8 @@ export async function POST(req: NextRequest) {
             email: user.email,
             password: initialAdmin.password,
             forcePasswordChange: initialAdmin.forcePasswordChange ?? true,
+            branding: tenant.branding,
+            enabledModules: tenant.enabledModules,
           });
         } catch (emailErr) {
           console.error("Welcome email failed:", emailErr);
