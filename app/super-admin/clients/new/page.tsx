@@ -18,6 +18,8 @@ export default function NewClientPage() {
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
   const [domains, setDomains] = useState("");
+  const [sqlClientName, setSqlClientName] = useState("");
+  const [sqlClients, setSqlClients] = useState<{ id: number; name: string; kam: string | null }[]>([]);
 
   // Branding
   const [primaryColor, setPrimaryColor] = useState("#3D6273");
@@ -53,6 +55,16 @@ export default function NewClientPage() {
       router.push("/super-admin/login");
     }
   }, [loading, user, router]);
+
+  // Load SQL clients for dropdown
+  useEffect(() => {
+    authFetch("/api/super-admin/sql-clients")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.clients) setSqlClients(data.clients);
+      })
+      .catch(() => {});
+  }, []);
 
   // Auto-generate slug from name
   useEffect(() => {
@@ -119,6 +131,7 @@ export default function NewClientPage() {
             .split(",")
             .map((d) => d.trim())
             .filter(Boolean),
+          sqlClientName: sqlClientName || undefined,
           initialAdmin:
             adminEmail && adminName && adminPassword
               ? {
@@ -229,6 +242,27 @@ export default function NewClientPage() {
               placeholder="e.g. clippa.ariascorecard.com, scorecard.clippa.co.za"
             />
             <p className="text-xs text-[#718096] mt-1">Comma-separated list of domains</p>
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-[#1A202C] mb-1.5">
+              SQL Server Client
+            </label>
+            <select
+              value={sqlClientName}
+              onChange={(e) => setSqlClientName(e.target.value)}
+              className="w-full rounded-lg border border-[#E2E8F0] px-4 py-2.5 text-sm focus:border-[#3D6273] focus:outline-none focus:ring-2 focus:ring-[#3D6273]/20"
+            >
+              <option value="">— No SQL mapping —</option>
+              {sqlClients.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}{c.kam ? ` (KAM: ${c.kam})` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-[#718096] mt-1">
+              Links this tenant to a client in the SQL database for real data
+            </p>
           </div>
         </section>
 

@@ -30,6 +30,8 @@ export default function EditClientPage({
   const [accentColor, setAccentColor] = useState("");
   const [enabledModules, setEnabledModules] = useState<ModuleKey[]>([]);
   const [weightings, setWeightings] = useState<KpiWeighting[]>([]);
+  const [sqlClientName, setSqlClientName] = useState("");
+  const [sqlClients, setSqlClients] = useState<{ id: number; name: string; kam: string | null }[]>([]);
 
   // Logo
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -61,6 +63,7 @@ export default function EditClientPage({
             setSecondaryColor(t.branding.secondaryColor || "");
             setAccentColor(t.branding.accentColor || "");
             setEnabledModules(t.enabledModules);
+            setSqlClientName(t.sqlClientName || "");
             setWeightings(
               t.kpiWeightings.length > 0
                 ? t.kpiWeightings
@@ -69,6 +72,14 @@ export default function EditClientPage({
           }
         })
         .finally(() => setFetching(false));
+
+      // Load SQL clients for dropdown
+      authFetch("/api/super-admin/sql-clients")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.clients) setSqlClients(data.clients);
+        })
+        .catch(() => {});
     }
   }, [user, slug]);
 
@@ -146,6 +157,7 @@ export default function EditClientPage({
             .split(",")
             .map((d) => d.trim())
             .filter(Boolean),
+          sqlClientName: sqlClientName || undefined,
         }),
       });
 
@@ -223,6 +235,22 @@ export default function EditClientPage({
               <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="w-4 h-4 accent-[#3D6273]" />
               Active
             </label>
+          </div>
+          <div className="mt-4">
+            <label className="block text-sm font-medium mb-1.5">SQL Server Client</label>
+            <select
+              value={sqlClientName}
+              onChange={(e) => setSqlClientName(e.target.value)}
+              className="w-full rounded-lg border border-[#E2E8F0] px-4 py-2.5 text-sm focus:border-[#3D6273] focus:outline-none"
+            >
+              <option value="">— No SQL mapping —</option>
+              {sqlClients.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}{c.kam ? ` (KAM: ${c.kam})` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-[#718096] mt-1">Links this tenant to SQL Server for real data</p>
           </div>
         </section>
 

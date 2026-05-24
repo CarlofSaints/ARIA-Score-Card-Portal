@@ -16,6 +16,16 @@ export default function ControlCentrePage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
+  // Sync state
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
+  const [syncMeta, setSyncMeta] = useState<{
+    lastSync?: string;
+    channelCount?: number;
+    storeCount?: number;
+    productCount?: number;
+  } | null>(null);
+
   useEffect(() => {
     if (!loading && !hasRole("admin")) {
       router.push("/");
@@ -27,6 +37,11 @@ export default function ControlCentrePage() {
       authFetch("/api/kpi-weightings")
         .then((r) => r.json())
         .then((data) => setWeightings(data.weightings || []))
+        .catch(() => {});
+
+      authFetch("/api/sync")
+        .then((r) => r.json())
+        .then((data) => setSyncMeta(data))
         .catch(() => {});
     }
   }, [user]);
@@ -125,6 +140,71 @@ export default function ControlCentrePage() {
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
+        </div>
+      </section>
+
+      {/* Data Sync */}
+      <section className="bg-white rounded-xl border border-[var(--color-border)] p-6 mb-6">
+        <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">
+          Data Sync
+        </h2>
+        <p className="text-sm text-[var(--color-text-muted)] mb-4">
+          Pull the latest channels, stores, products, and distribution data from SQL Server.
+        </p>
+
+        {syncMeta && syncMeta.lastSync && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="p-3 rounded-lg bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/10">
+              <p className="text-xs text-[var(--color-text-muted)]">Last Sync</p>
+              <p className="text-sm font-medium text-[var(--color-text)]">
+                {new Date(syncMeta.lastSync as string).toLocaleString()}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/10">
+              <p className="text-xs text-[var(--color-text-muted)]">Channels</p>
+              <p className="text-sm font-medium text-[var(--color-text)]">{syncMeta.channelCount ?? 0}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/10">
+              <p className="text-xs text-[var(--color-text-muted)]">Stores</p>
+              <p className="text-sm font-medium text-[var(--color-text)]">{syncMeta.storeCount ?? 0}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/10">
+              <p className="text-xs text-[var(--color-text-muted)]">Products</p>
+              <p className="text-sm font-medium text-[var(--color-text)]">{syncMeta.productCount ?? 0}</p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              setSyncing(true);
+              setSyncMessage("");
+              try {
+                const res = await authFetch("/api/sync", { method: "POST" });
+                const data = await res.json();
+                if (res.ok) {
+                  setSyncMessage(`Synced: ${data.counts.channels} channels, ${data.counts.stores} stores, ${data.counts.products} products`);
+                  setSyncMeta({ lastSync: new Date().toISOString(), ...data.counts });
+                } else {
+                  setSyncMessage(data.error || "Sync failed");
+                }
+              } catch {
+                setSyncMessage("Network error during sync");
+              } finally {
+                setSyncing(false);
+              }
+            }}
+            disabled={syncing}
+            className="px-6 py-2 rounded-lg bg-[var(--color-primary)] text-sm font-medium text-white disabled:opacity-50"
+          >
+            {syncing ? "Syncing..." : "Sync Now"}
+          </button>
+          {syncMessage && (
+            <span className={`text-sm ${syncMessage.includes("Synced") ? "text-green-600" : "text-red-600"}`}>
+              {syncMessage}
+            </span>
+          )}
         </div>
       </section>
 

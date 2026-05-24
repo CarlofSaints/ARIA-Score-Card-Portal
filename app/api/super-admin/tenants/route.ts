@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
       enabledModules,
       kpiWeightings,
       domains,
+      sqlClientName,
       initialAdmin,
       sendEmail,
     } = body;
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest) {
       enabledModules: enabledModules || [],
       kpiWeightings: kpiWeightings || [],
       domains: domains || [],
+      sqlClientName: sqlClientName || undefined,
     };
 
     const tenant = await createTenant(tenantData);

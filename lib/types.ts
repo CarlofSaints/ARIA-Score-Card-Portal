@@ -95,6 +95,7 @@ export interface TenantConfig {
   enabledModules: ModuleKey[];
   kpiWeightings: KpiWeighting[];
   domains: string[];
+  sqlClientName?: string; // Maps to tblClients.Client in SQL Server
   createdAt: string; // ISO
   updatedAt: string; // ISO
 }

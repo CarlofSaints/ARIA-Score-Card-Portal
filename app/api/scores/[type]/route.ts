@@ -43,6 +43,13 @@ export async function GET(
 
     let scores: EntityScore[] = [];
 
+    // Load ND data from blob (populated by /api/sync)
+    const ndKey = type === "cam" ? "channel" : type;
+    const ndData = await readJson<Record<string, number>>(
+      `${slug}/data/kpi/${period}/nd-${ndKey}.json`,
+      {}
+    );
+
     if (type === "channel") {
       const channels = await readJson<ScorecardChannel[]>(
         `${slug}/data/channels.json`,
@@ -55,10 +62,11 @@ export async function GET(
 
       scores = channels.map((ch) => {
         const sd = sales.find((s) => s.entityId === ch.id);
+        const ndValue = ndData[ch.id] ?? Math.random() * 100;
         const kpiValues: { key: KpiKey; value: number }[] = [
           { key: "sales_growth", value: sd ? calcSalesPerformance(sd) : 50 },
           { key: "phantom_inventory", value: Math.random() * 100 },
-          { key: "numerical_distribution", value: Math.random() * 100 },
+          { key: "numerical_distribution", value: ndValue },
           { key: "oos", value: Math.random() * 100 },
         ];
 
@@ -83,10 +91,11 @@ export async function GET(
 
       scores = stores.map((st) => {
         const sd = sales.find((s) => s.entityId === st.id);
+        const ndValue = ndData[st.id] ?? Math.random() * 100;
         const kpiValues: { key: KpiKey; value: number }[] = [
           { key: "sales_growth", value: sd ? calcSalesPerformance(sd) : 50 },
           { key: "phantom_inventory", value: Math.random() * 100 },
-          { key: "numerical_distribution", value: Math.random() * 100 },
+          { key: "numerical_distribution", value: ndValue },
           { key: "oos", value: Math.random() * 100 },
         ];
 
@@ -111,10 +120,11 @@ export async function GET(
 
       scores = products.map((p) => {
         const sd = sales.find((s) => s.entityId === p.id);
+        const ndValue = ndData[p.id] ?? Math.random() * 100;
         const kpiValues: { key: KpiKey; value: number }[] = [
           { key: "sales_growth", value: sd ? calcSalesPerformance(sd) : 50 },
           { key: "phantom_inventory", value: Math.random() * 100 },
-          { key: "numerical_distribution", value: Math.random() * 100 },
+          { key: "numerical_distribution", value: ndValue },
           { key: "oos", value: Math.random() * 100 },
         ];
 
@@ -134,10 +144,18 @@ export async function GET(
       );
 
       scores = mappings.map((m) => {
+        // CAM ND = average ND of their assigned channels
+        const camChannelNds = m.channelIds
+          .map((chId) => ndData[chId])
+          .filter((v): v is number => v !== undefined);
+        const camNd = camChannelNds.length > 0
+          ? camChannelNds.reduce((a, b) => a + b, 0) / camChannelNds.length
+          : Math.random() * 100;
+
         const kpiValues: { key: KpiKey; value: number }[] = [
           { key: "sales_growth", value: Math.random() * 100 },
           { key: "phantom_inventory", value: Math.random() * 100 },
-          { key: "numerical_distribution", value: Math.random() * 100 },
+          { key: "numerical_distribution", value: camNd },
           { key: "oos", value: Math.random() * 100 },
         ];
 
