@@ -26,27 +26,33 @@ export async function POST(req: NextRequest) {
     }
 
     const existing = await readJson<SuperAdmin[]>(SA_KEY, []);
-    if (existing.some((sa) => sa.email.toLowerCase() === email.toLowerCase())) {
-      return Response.json(
-        { error: "Super admin with that email already exists" },
-        { status: 409, headers: noCacheHeaders() }
-      );
+    const hash = await bcrypt.hash(password, 10);
+    const idx = existing.findIndex(
+      (sa) => sa.email.toLowerCase() === email.toLowerCase()
+    );
+
+    let adminId: string;
+    if (idx >= 0) {
+      // Reset password for existing super admin
+      existing[idx].password = hash;
+      existing[idx].name = name;
+      adminId = existing[idx].id;
+    } else {
+      // Create new super admin
+      adminId = uuid();
+      existing.push({
+        id: adminId,
+        name,
+        email: email.toLowerCase(),
+        password: hash,
+        createdAt: new Date().toISOString(),
+      });
     }
 
-    const hash = await bcrypt.hash(password, 10);
-    const admin: SuperAdmin = {
-      id: uuid(),
-      name,
-      email: email.toLowerCase(),
-      password: hash,
-      createdAt: new Date().toISOString(),
-    };
-
-    existing.push(admin);
     await writeJson(SA_KEY, existing);
 
     return Response.json(
-      { success: true, id: admin.id },
+      { success: true, id: adminId, reset: idx >= 0 },
       { headers: noCacheHeaders() }
     );
   } catch (err) {
