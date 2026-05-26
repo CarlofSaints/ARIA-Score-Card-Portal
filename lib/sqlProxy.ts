@@ -111,3 +111,78 @@ export async function getNdByStore(client: string) {
 export async function getNdByProduct(client: string) {
   return sqlQuery<SqlNdRow>("nd_by_product", { client });
 }
+
+// ── Sales, OOS, Phantom helpers ─────────────────────────────────────────────
+
+export interface SqlSalesRow {
+  Channel?: string;
+  ChannelDataID?: number;
+  SiteID?: number;
+  SiteCode?: string;
+  SiteName?: string;
+  ProductID?: number;
+  SKU?: string;
+  "Product Description"?: string;
+  "Product Brand"?: string;
+  YTD_Value: number;
+  YTD_Units: number;
+  SPLY_Value: number;
+  SPLY_Units: number;
+}
+
+export interface SqlOosDetailRow {
+  SiteID: number;
+  SiteCode: string;
+  SiteName: string;
+  Channel: string;
+  SubChannel: string | null;
+  ProductID: number;
+  SKU: string;
+  "Product Description": string;
+  "Product Brand": string;
+  SOH: number;
+  LatestDate: string;
+}
+
+export interface SqlPhantomDetailRow {
+  SiteID: number;
+  SiteCode: string;
+  SiteName: string;
+  Channel: string;
+  SubChannel: string | null;
+  ProductID: number;
+  SKU: string;
+  "Product Description": string;
+  "Product Brand": string;
+  SOH_Now: number;
+  SOH_Past: number;
+  PeriodSales: number;
+}
+
+export interface SqlBrandRow {
+  Brand: string;
+}
+
+export async function getClientBrands(client: string) {
+  return sqlQuery<SqlBrandRow>("client_brands", { client });
+}
+
+export async function getYtdSalesByChannel(client: string) {
+  return sqlQuery<SqlSalesRow>("ytd_sales_by_channel", { client });
+}
+
+export async function getYtdSalesByStore(client: string) {
+  return sqlQuery<SqlSalesRow>("ytd_sales_by_store", { client });
+}
+
+export async function getYtdSalesByProduct(client: string) {
+  return sqlQuery<SqlSalesRow>("ytd_sales_by_product", { client });
+}
+
+export async function getOosDetail(client: string) {
+  return sqlQuery<SqlOosDetailRow>("oos_detail", { client });
+}
+
+export async function getPhantomDetail(client: string, lookbackDays = 60) {
+  return sqlQuery<SqlPhantomDetailRow>("phantom_detail", { client, lookbackDays });
+}

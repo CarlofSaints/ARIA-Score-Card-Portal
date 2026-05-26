@@ -96,6 +96,7 @@ export interface TenantConfig {
   kpiWeightings: KpiWeighting[];
   domains: string[];
   sqlClientName?: string; // Maps to tblClients.Client in SQL Server
+  phantomLookbackDays?: number; // Days to look back for phantom stock detection (default 60)
   createdAt: string; // ISO
   updatedAt: string; // ISO
 }
@@ -221,6 +222,57 @@ export interface SalesData {
   previousPeriodSalesValue?: number;
   previousPeriodSalesUnits?: number;
   target?: number;
+}
+
+// ── SQL Data Types (from proxy queries) ──
+
+export interface SqlSalesRow {
+  Channel?: string;
+  ChannelDataID?: number;
+  SiteID?: number;
+  SiteCode?: string;
+  SiteName?: string;
+  ProductID?: number;
+  SKU?: string;
+  "Product Description"?: string;
+  "Product Brand"?: string;
+  YTD_Value: number;
+  YTD_Units: number;
+  SPLY_Value: number;
+  SPLY_Units: number;
+}
+
+export interface SqlOosDetailRow {
+  SiteID: number;
+  SiteCode: string;
+  SiteName: string;
+  Channel: string;
+  SubChannel: string | null;
+  ProductID: number;
+  SKU: string;
+  "Product Description": string;
+  "Product Brand": string;
+  SOH: number;
+  LatestDate: string;
+}
+
+export interface SqlPhantomDetailRow {
+  SiteID: number;
+  SiteCode: string;
+  SiteName: string;
+  Channel: string;
+  SubChannel: string | null;
+  ProductID: number;
+  SKU: string;
+  "Product Description": string;
+  "Product Brand": string;
+  SOH_Now: number;
+  SOH_Past: number;
+  PeriodSales: number;
+}
+
+export interface SqlBrand {
+  Brand: string;
 }
 
 // ── Activity Log ──

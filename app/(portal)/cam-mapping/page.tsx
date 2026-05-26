@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
-import type { CamMapping } from "@/lib/types";
+import type { CamMapping, ScorecardChannel } from "@/lib/types";
 
 export default function CamMappingPage() {
   const { user, loading, hasRole } = useAuth();
@@ -13,10 +13,14 @@ export default function CamMappingPage() {
   const [showForm, setShowForm] = useState(false);
   const [camName, setCamName] = useState("");
   const [camEmail, setCamEmail] = useState("");
-  const [channels, setChannels] = useState("");
-  const [brands, setBrands] = useState("");
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Available options from SQL data
+  const [availableChannels, setAvailableChannels] = useState<ScorecardChannel[]>([]);
+  const [availableBrands, setAvailableBrands] = useState<string[]>([]);
 
   useEffect(() => {
     if (!loading && !hasRole("admin")) {
@@ -25,7 +29,10 @@ export default function CamMappingPage() {
   }, [loading, hasRole, router]);
 
   useEffect(() => {
-    if (user && hasRole("admin")) loadMappings();
+    if (user && hasRole("admin")) {
+      loadMappings();
+      loadOptions();
+    }
   }, [user]);
 
   async function loadMappings() {
@@ -34,6 +41,31 @@ export default function CamMappingPage() {
       const data = await res.json();
       setMappings(data.mappings || []);
     } catch { /* ignore */ }
+  }
+
+  async function loadOptions() {
+    try {
+      const [chRes, brRes] = await Promise.all([
+        authFetch("/api/data/channels"),
+        authFetch("/api/data/brands"),
+      ]);
+      const chData = await chRes.json();
+      const brData = await brRes.json();
+      setAvailableChannels(chData.channels || []);
+      setAvailableBrands(brData.brands || []);
+    } catch { /* ignore */ }
+  }
+
+  function toggleChannel(id: string) {
+    setSelectedChannels((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
+    );
+  }
+
+  function toggleBrand(name: string) {
+    setSelectedBrands((prev) =>
+      prev.includes(name) ? prev.filter((b) => b !== name) : [...prev, name]
+    );
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -45,17 +77,11 @@ export default function CamMappingPage() {
       const res = await authFetch("/api/cam-mappings", {
         method: "POST",
         body: JSON.stringify({
-          camUserId: camEmail, // use email as ID for now
+          camUserId: camEmail,
           camName,
           camEmail,
-          channelIds: channels
-            .split(",")
-            .map((c) => c.trim())
-            .filter(Boolean),
-          brandIds: brands
-            .split(",")
-            .map((b) => b.trim())
-            .filter(Boolean),
+          channelIds: selectedChannels,
+          brandIds: selectedBrands,
         }),
       });
 
@@ -68,8 +94,8 @@ export default function CamMappingPage() {
       setShowForm(false);
       setCamName("");
       setCamEmail("");
-      setChannels("");
-      setBrands("");
+      setSelectedChannels([]);
+      setSelectedBrands([]);
       loadMappings();
     } catch {
       setError("Network error");
@@ -84,6 +110,8 @@ export default function CamMappingPage() {
   }
 
   if (loading || !user) return null;
+
+  const noOptions = availableChannels.length === 0 && availableBrands.length === 0;
 
   return (
     <div>
@@ -103,6 +131,12 @@ export default function CamMappingPage() {
           {showForm ? "Cancel" : "+ Add Mapping"}
         </button>
       </div>
+
+      {noOptions && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+          No channels or brands loaded yet. Run a Data Sync from the Control Centre first.
+        </div>
+      )}
 
       {showForm && (
         <form
@@ -136,30 +170,69 @@ export default function CamMappingPage() {
               />
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Channels</label>
-              <input
-                type="text"
-                value={channels}
-                onChange={(e) => setChannels(e.target.value)}
-                placeholder="Channel A, Channel B"
-                className="w-full rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm focus:border-[var(--color-primary)] focus:outline-none"
-              />
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">Comma-separated</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">Brands</label>
-              <input
-                type="text"
-                value={brands}
-                onChange={(e) => setBrands(e.target.value)}
-                placeholder="Brand X, Brand Y"
-                className="w-full rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm focus:border-[var(--color-primary)] focus:outline-none"
-              />
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">Comma-separated</p>
-            </div>
+
+          {/* Channels multi-select */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2">Channels</label>
+            {availableChannels.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {availableChannels.map((ch) => {
+                  const selected = selectedChannels.includes(ch.name);
+                  return (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() => toggleChannel(ch.name)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        selected
+                          ? "bg-blue-100 border-blue-300 text-blue-800"
+                          : "bg-white border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-blue-200"
+                      }`}
+                    >
+                      {selected && <span className="mr-1">&#10003;</span>}
+                      {ch.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                No channels available. Run a sync first.
+              </p>
+            )}
           </div>
+
+          {/* Brands multi-select */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2">Brands</label>
+            {availableBrands.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {availableBrands.map((brand) => {
+                  const selected = selectedBrands.includes(brand);
+                  return (
+                    <button
+                      key={brand}
+                      type="button"
+                      onClick={() => toggleBrand(brand)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        selected
+                          ? "bg-purple-100 border-purple-300 text-purple-800"
+                          : "bg-white border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-purple-200"
+                      }`}
+                    >
+                      {selected && <span className="mr-1">&#10003;</span>}
+                      {brand}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                No brands available. Run a sync first.
+              </p>
+            )}
+          </div>
+
           <button
             type="submit"
             disabled={saving}
