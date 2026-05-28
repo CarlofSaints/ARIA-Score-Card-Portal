@@ -41,10 +41,16 @@ export function proxy(req: NextRequest) {
   const hostname = req.headers.get("host") || "";
   const host = hostname.toLowerCase().replace(/:\d+$/, "");
 
+  // 1. Platform domain → redirect to super-admin portal
+  const platformDomain = process.env.PLATFORM_DOMAIN?.toLowerCase();
+  if (platformDomain && host === platformDomain) {
+    return NextResponse.redirect(new URL("/super-admin/login", req.url));
+  }
+
   const tenants = loadTenantsFromEnv();
   const devSlug = process.env.DEV_TENANT_SLUG;
 
-  // 1. Match hostname to a configured tenant
+  // 2. Match hostname to a configured tenant
   const tenant = tenants.find(
     (t) => t.active && t.domains.some((d) => d.toLowerCase() === host)
   );
@@ -56,7 +62,7 @@ export function proxy(req: NextRequest) {
     return NextResponse.next({ request: { headers } });
   }
 
-  // 2. DEV_TENANT_SLUG fallback (local dev, Vercel preview, main domain)
+  // 3. DEV_TENANT_SLUG fallback (local dev, Vercel preview, main domain)
   if (devSlug) {
     const fallbackTenant = tenants.find(
       (t) => t.slug === devSlug && t.active
@@ -67,12 +73,6 @@ export function proxy(req: NextRequest) {
       headers.set("x-tenant-config", JSON.stringify(fallbackTenant));
     }
     return NextResponse.next({ request: { headers } });
-  }
-
-  // 3. Platform domain → redirect to super-admin portal
-  const platformDomain = process.env.PLATFORM_DOMAIN?.toLowerCase();
-  if (platformDomain && host === platformDomain) {
-    return NextResponse.redirect(new URL("/super-admin/login", req.url));
   }
 
   // 4. Vercel preview URLs → route to first active tenant
