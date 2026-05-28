@@ -41,13 +41,6 @@ export async function GET(
 
     const weightings = await getKpiWeightings(slug);
 
-    // Load ND data from blob
-    const ndKey = type === "cam" ? "channel" : type;
-    const ndData = await readJson<Record<string, number>>(
-      `${slug}/data/kpi/${period}/nd-${ndKey}.json`,
-      {}
-    );
-
     // Load OOS and Phantom data from blob
     const oosKey = type === "cam" ? "channel" : type;
     const phantomKey = type === "cam" ? "channel" : type;
@@ -74,14 +67,13 @@ export async function GET(
 
       scores = channels.map((ch) => {
         const sd = sales.find((s) => s.entityId === ch.id);
-        const ndValue = ndData[ch.id] ?? 50;
         const oosPercent = oosData[ch.id] ?? 50;
         const phantomPercent = phantomData[ch.id] ?? 50;
 
         const kpiValues: { key: KpiKey; value: number }[] = [
           { key: "sales_growth", value: sd ? calcSalesPerformance(sd) : 50 },
           { key: "phantom_inventory", value: 100 - phantomPercent },
-          { key: "numerical_distribution", value: ndValue },
+          { key: "numerical_distribution", value: 50 },
           { key: "oos", value: 100 - oosPercent },
         ];
 
@@ -106,14 +98,13 @@ export async function GET(
 
       scores = stores.map((st) => {
         const sd = sales.find((s) => s.entityId === st.id);
-        const ndValue = ndData[st.id] ?? 50;
         const oosPercent = oosData[st.id] ?? 50;
         const phantomPercent = phantomData[st.id] ?? 50;
 
         const kpiValues: { key: KpiKey; value: number }[] = [
           { key: "sales_growth", value: sd ? calcSalesPerformance(sd) : 50 },
           { key: "phantom_inventory", value: 100 - phantomPercent },
-          { key: "numerical_distribution", value: ndValue },
+          { key: "numerical_distribution", value: 50 },
           { key: "oos", value: 100 - oosPercent },
         ];
 
@@ -138,14 +129,13 @@ export async function GET(
 
       scores = products.map((p) => {
         const sd = sales.find((s) => s.entityId === p.id);
-        const ndValue = ndData[p.id] ?? 50;
         const oosPercent = oosData[p.id] ?? 50;
         const phantomPercent = phantomData[p.id] ?? 50;
 
         const kpiValues: { key: KpiKey; value: number }[] = [
           { key: "sales_growth", value: sd ? calcSalesPerformance(sd) : 50 },
           { key: "phantom_inventory", value: 100 - phantomPercent },
-          { key: "numerical_distribution", value: ndValue },
+          { key: "numerical_distribution", value: 50 },
           { key: "oos", value: 100 - oosPercent },
         ];
 
@@ -169,14 +159,6 @@ export async function GET(
       );
 
       scores = mappings.map((m) => {
-        // CAM ND = average of their assigned channels
-        const camChannelNds = m.channelIds
-          .map((chId) => ndData[chId])
-          .filter((v): v is number => v !== undefined);
-        const camNd = camChannelNds.length > 0
-          ? camChannelNds.reduce((a, b) => a + b, 0) / camChannelNds.length
-          : 50;
-
         // CAM Sales = average sales performance of assigned channels
         const camSalesValues = m.channelIds
           .map((chId) => sales.find((s) => s.entityId === chId))
@@ -205,7 +187,7 @@ export async function GET(
         const kpiValues: { key: KpiKey; value: number }[] = [
           { key: "sales_growth", value: camSales },
           { key: "phantom_inventory", value: 100 - camPhantom },
-          { key: "numerical_distribution", value: camNd },
+          { key: "numerical_distribution", value: 50 },
           { key: "oos", value: 100 - camOos },
         ];
 

@@ -7,9 +7,6 @@ import {
   getClientChannels,
   getClientStores,
   getClientProducts,
-  getNdByChannel,
-  getNdByStore,
-  getNdByProduct,
   getClientBrands,
   getYtdSalesByChannel,
   getYtdSalesByStore,
@@ -44,15 +41,12 @@ export async function POST(req: NextRequest) {
     const now = new Date();
     const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    // ── Batch 1: Existing data (channels, stores, products, ND) ──
-    const [channelsRes, storesRes, productsRes, ndChannelRes, ndStoreRes, ndProductRes] =
+    // ── Batch 1: Core data (channels, stores, products) ──
+    const [channelsRes, storesRes, productsRes] =
       await Promise.all([
         getClientChannels(client),
         getClientStores(client),
         getClientProducts(client),
-        getNdByChannel(client),
-        getNdByStore(client),
-        getNdByProduct(client),
       ]);
 
     // Transform channels
@@ -78,25 +72,6 @@ export async function POST(req: NextRequest) {
       brand: p["Product Brand"] || "Unknown",
       category: p["Product Category"] || undefined,
     }));
-
-    // Build ND lookup maps
-    const ndByChannel: Record<string, number> = {};
-    for (const row of ndChannelRes.data) {
-      const ch = channels.find((c) => c.name === row.Channel);
-      if (ch) ndByChannel[ch.id] = Math.round(row.ndPercent * 10) / 10;
-    }
-
-    const ndByStore: Record<string, number> = {};
-    for (const row of ndStoreRes.data) {
-      const st = stores.find((s) => s.id === String(storesRes.data.find((x) => x.SiteCode === row.SiteCode)?.SiteID));
-      if (st) ndByStore[st.id] = Math.round(row.ndPercent * 10) / 10;
-    }
-
-    const ndByProduct: Record<string, number> = {};
-    for (const row of ndProductRes.data) {
-      const p = products.find((x) => x.sku === row.ProductID);
-      if (p) ndByProduct[p.id] = Math.round(row.ndPercent * 10) / 10;
-    }
 
     // ── Batch 2: Sales, OOS, Phantom, Brands ──
     const [
@@ -268,13 +243,10 @@ export async function POST(req: NextRequest) {
 
     // ── Write everything to blob ──
     await Promise.all([
-      // Existing
+      // Core
       writeJson(`${slug}/data/channels.json`, channels),
       writeJson(`${slug}/data/stores.json`, stores),
       writeJson(`${slug}/data/products.json`, products),
-      writeJson(`${slug}/data/kpi/${period}/nd-channel.json`, ndByChannel),
-      writeJson(`${slug}/data/kpi/${period}/nd-store.json`, ndByStore),
-      writeJson(`${slug}/data/kpi/${period}/nd-product.json`, ndByProduct),
       // Sales
       writeJson(`${slug}/data/sales/${period}/channels.json`, salesChannels),
       writeJson(`${slug}/data/sales/${period}/stores.json`, salesStores),
@@ -319,9 +291,6 @@ export async function POST(req: NextRequest) {
           stores: stores.length,
           products: products.length,
           brands: brands.length,
-          ndChannelEntries: Object.keys(ndByChannel).length,
-          ndStoreEntries: Object.keys(ndByStore).length,
-          ndProductEntries: Object.keys(ndByProduct).length,
           salesChannels: salesChannels.length,
           salesStores: salesStores.length,
           salesProducts: salesProducts.length,
