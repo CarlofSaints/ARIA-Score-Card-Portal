@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSlug } from "@/lib/getTenantSlug";
 import { getUserByEmail, verifyPassword, updateUser } from "@/lib/userData";
+import { readJson } from "@/lib/blob";
+import bcrypt from "bcryptjs";
 import { encodeSession, sessionCookieOptions, noCacheHeaders } from "@/lib/auth";
-import type { SessionPayload } from "@/lib/types";
+import type { SessionPayload, SuperAdmin } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,47 +17,68 @@ export async function POST(req: NextRequest) {
     }
 
     const slug = await getTenantSlug();
+
+    // 1. Try tenant user first
     const user = await getUserByEmail(slug, email);
+    if (user && user.active) {
+      const valid = await verifyPassword(user, password);
+      if (valid) {
+        await updateUser(slug, user.id, {
+          lastLoginAt: new Date().toISOString(),
+        });
 
-    if (!user || !user.active) {
-      return Response.json(
-        { error: "Invalid credentials" },
-        { status: 401, headers: noCacheHeaders() }
-      );
+        const session: SessionPayload = {
+          userId: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          tenantSlug: slug,
+          forcePasswordChange: user.forcePasswordChange,
+        };
+
+        const encoded = encodeSession(session);
+        const cookieOpts = sessionCookieOptions();
+        const res = NextResponse.json(
+          { user: session },
+          { headers: noCacheHeaders() }
+        );
+        res.cookies.set(cookieOpts.name, encoded, cookieOpts);
+        return res;
+      }
     }
 
-    const valid = await verifyPassword(user, password);
-    if (!valid) {
-      return Response.json(
-        { error: "Invalid credentials" },
-        { status: 401, headers: noCacheHeaders() }
-      );
-    }
-
-    // Update last login
-    await updateUser(slug, user.id, {
-      lastLoginAt: new Date().toISOString(),
-    });
-
-    const session: SessionPayload = {
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      tenantSlug: slug,
-      forcePasswordChange: user.forcePasswordChange,
-    };
-
-    const encoded = encodeSession(session);
-    const cookieOpts = sessionCookieOptions();
-
-    const res = NextResponse.json(
-      { user: session },
-      { headers: noCacheHeaders() }
+    // 2. Fallback: try super admin credentials (allows SA to use tenant routes)
+    const admins = await readJson<SuperAdmin[]>("_platform/super-admins.json", []);
+    const sa = admins.find(
+      (a) => a.email.toLowerCase() === email.toLowerCase()
     );
-    res.cookies.set(cookieOpts.name, encoded, cookieOpts);
+    if (sa) {
+      const saValid = await bcrypt.compare(password, sa.password);
+      if (saValid) {
+        const session: SessionPayload = {
+          userId: sa.id,
+          email: sa.email,
+          name: sa.name,
+          role: "super_admin",
+          tenantSlug: slug,
+          isSuperAdmin: true,
+        };
 
-    return res;
+        const encoded = encodeSession(session);
+        const cookieOpts = sessionCookieOptions(60 * 60 * 8);
+        const res = NextResponse.json(
+          { user: session },
+          { headers: noCacheHeaders() }
+        );
+        res.cookies.set(cookieOpts.name, encoded, cookieOpts);
+        return res;
+      }
+    }
+
+    return Response.json(
+      { error: "Invalid credentials" },
+      { status: 401, headers: noCacheHeaders() }
+    );
   } catch (err) {
     console.error("Login error:", err);
     return Response.json(
