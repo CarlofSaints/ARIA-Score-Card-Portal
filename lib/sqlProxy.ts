@@ -186,7 +186,3 @@ export async function getOosDetail(client: string) {
 export async function getPhantomDetail(client: string, lookbackDays = 60) {
   return sqlQuery<SqlPhantomDetailRow>("phantom_detail", { client, lookbackDays });
 }
-
-export async function getPhantomStockPnp(client: string, phantomDays = 60) {
-  return sqlQuery<Record<string, unknown>>("phantom_stock_pnp", { client, phantomDays });
-}
