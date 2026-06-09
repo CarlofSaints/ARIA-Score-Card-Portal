@@ -295,6 +295,24 @@ export interface SqlPhantomStockPnpRow {
   LatestSOH: number;
 }
 
+// ── Phantom Stock (enriched detail for the phantom store page) ──
+// Built during sync from the GetPhantomStock_PNP SP (code fields only),
+// enriched with names/channel/brand/province from the store & product master.
+export interface PhantomDetailRow {
+  siteCode: string;
+  storeName: string;
+  channelName: string;
+  province: string;
+  productId: string;
+  productName: string;
+  brand: string;
+  channelArticle: string;
+  siteArticleStatus: string;
+  ranged: boolean | null; // from SP "Ranging Status"; null when unknown
+  soh: number;
+  date: string; // snapshot date (ISO)
+}
+
 // ── Activity Log ──
 
 export interface ActivityLogEntry {

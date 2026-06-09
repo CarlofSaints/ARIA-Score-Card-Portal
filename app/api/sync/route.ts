@@ -19,6 +19,7 @@ import type {
   ScorecardStore,
   ScorecardProduct,
   SalesData,
+  PhantomDetailRow,
 } from "@/lib/types";
 
 export const maxDuration = 120;
@@ -200,41 +201,62 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Aggregate Phantom (GetPhantomStock_PNP — PnP channel) ──
-    // One phantom record per store + product + snapshot date. ChannelArticle is
-    // preserved in the stored detail below, but is not part of the dedupe key.
+    // One phantom record per store + product + snapshot date (ChannelArticle is
+    // kept in the detail but not in the dedupe key). The SP returns code fields
+    // only, so we enrich names/channel/brand/province from the synced store &
+    // product master — single source of truth, resilient to SP column changes.
     const seenPhantom = new Set<string>();
-    const phantomRows = phantomRes.data.filter((row) => {
+    const dedupedPhantom = phantomRes.data.filter((row) => {
       const key = `${row.SiteCode}|${row["Product ID"]}|${row.Date}`;
       if (seenPhantom.has(key)) return false;
       seenPhantom.add(key);
       return true;
     });
 
-    // Map SP rows (keyed by name / SiteCode / Product ID) to scorecard entity IDs.
     const channelIdByName = new Map<string, string>(
       channels.map((c) => [c.name, c.id] as [string, string])
     );
-    const storeIdBySiteCode = new Map<string, string>(
+    const storeBySiteCode = new Map<string, ScorecardStore>(
       stores
         .filter((s) => s.siteCode)
-        .map((s) => [s.siteCode as string, s.id] as [string, string])
+        .map((s) => [s.siteCode as string, s] as [string, ScorecardStore])
     );
-    const productIdBySku = new Map<string, string>(
-      products.map((p) => [p.sku, p.id] as [string, string])
+    const productBySku = new Map<string, ScorecardProduct>(
+      products.map((p) => [p.sku, p] as [string, ScorecardProduct])
     );
 
     const phantomCountByChannel: Record<string, number> = {};
     const phantomCountByStore: Record<string, number> = {};
     const phantomCountByProduct: Record<string, number> = {};
 
-    for (const row of phantomRows) {
-      const chId = channelIdByName.get(row.Channel);
-      if (chId) phantomCountByChannel[chId] = (phantomCountByChannel[chId] || 0) + 1;
-      const storeId = storeIdBySiteCode.get(row.SiteCode);
-      if (storeId) phantomCountByStore[storeId] = (phantomCountByStore[storeId] || 0) + 1;
-      const prodId = productIdBySku.get(row["Product ID"]);
-      if (prodId) phantomCountByProduct[prodId] = (phantomCountByProduct[prodId] || 0) + 1;
-    }
+    // Enriched detail rows for the phantom store page. Channel is derived from
+    // the store (the SP no longer reliably returns a Channel column).
+    const phantomRows: PhantomDetailRow[] = dedupedPhantom.map((row) => {
+      const store = storeBySiteCode.get(row.SiteCode);
+      const product = productBySku.get(row["Product ID"]);
+      const channelId = store ? channelIdByName.get(store.channelName) : undefined;
+
+      if (channelId)
+        phantomCountByChannel[channelId] = (phantomCountByChannel[channelId] || 0) + 1;
+      if (store) phantomCountByStore[store.id] = (phantomCountByStore[store.id] || 0) + 1;
+      if (product) phantomCountByProduct[product.id] = (phantomCountByProduct[product.id] || 0) + 1;
+
+      const ranging = String(row["Ranging Status"] ?? "").toLowerCase();
+      return {
+        siteCode: row.SiteCode,
+        storeName: store?.name || row.SiteCode,
+        channelName: store?.channelName || "",
+        province: store?.region || "",
+        productId: row["Product ID"],
+        productName: product?.name || row["Product ID"],
+        brand: product?.brand || "",
+        channelArticle: row.ChannelArticle,
+        siteArticleStatus: String(row["Site Article Status"] ?? ""),
+        ranged: ranging === "true" ? true : ranging === "false" ? false : null,
+        soh: row.LatestSOH,
+        date: row.Date,
+      };
+    });
 
     const phantomByChannel: Record<string, number> = {};
     for (const ch of channels) {
