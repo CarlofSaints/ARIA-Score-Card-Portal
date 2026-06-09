@@ -44,8 +44,11 @@ export function useAuth() {
     try {
       await fetch("/api/auth", { method: "DELETE" });
     } catch {
-      // Ignore
+      // Ignore — clear client state regardless
     }
+    // Hard-navigate to login so React state is fully reset and the user
+    // can't land back on a cached authenticated page.
+    window.location.href = "/login";
   }, []);
 
   const hasRole = useCallback(
