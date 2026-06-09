@@ -76,6 +76,11 @@ export async function POST(req: NextRequest) {
     }));
 
     // ── Batch 2: Sales, OOS, Phantom, Brands ──
+    // Track whether the phantom SP actually succeeded — a failed call must NOT
+    // overwrite previously-synced phantom data with an empty set.
+    let phantomOk = true;
+    let phantomError = "";
+
     const [
       salesChannelRes,
       salesStoreRes,
@@ -88,7 +93,11 @@ export async function POST(req: NextRequest) {
       getYtdSalesByStore(client).catch(() => ({ data: [], count: 0 })),
       getYtdSalesByProduct(client).catch(() => ({ data: [], count: 0 })),
       getOosDetail(client).catch(() => ({ data: [], count: 0 })),
-      getPhantomStockPnp(client, phantomDays).catch(() => ({ data: [], count: 0 })),
+      getPhantomStockPnp(client, phantomDays).catch((e) => {
+        phantomOk = false;
+        phantomError = e instanceof Error ? e.message : String(e);
+        return { data: [], count: 0 };
+      }),
       getClientBrands(client).catch(() => ({ data: [], count: 0 })),
     ]);
 
@@ -283,7 +292,7 @@ export async function POST(req: NextRequest) {
     const brands: string[] = brandsRes.data.map((b) => b.Brand);
 
     // ── Write everything to blob ──
-    await Promise.all([
+    const writes = [
       // Core
       writeJson(`${slug}/data/channels.json`, channels),
       writeJson(`${slug}/data/stores.json`, stores),
@@ -296,16 +305,24 @@ export async function POST(req: NextRequest) {
       writeJson(`${slug}/data/kpi/${period}/oos-channel.json`, oosByChannel),
       writeJson(`${slug}/data/kpi/${period}/oos-store.json`, oosByStore),
       writeJson(`${slug}/data/kpi/${period}/oos-product.json`, oosByProduct),
-      // Phantom
-      writeJson(`${slug}/data/kpi/${period}/phantom-channel.json`, phantomByChannel),
-      writeJson(`${slug}/data/kpi/${period}/phantom-store.json`, phantomByStore),
-      writeJson(`${slug}/data/kpi/${period}/phantom-product.json`, phantomByProduct),
       // Brands
       writeJson(`${slug}/data/brands.json`, brands),
       // Raw detail (for future drill-down)
       writeJson(`${slug}/data/oos/${period}/detail.json`, oosRows),
-      writeJson(`${slug}/data/phantom/${period}/detail.json`, phantomRows),
-    ]);
+    ];
+
+    // Only overwrite phantom data when the SP succeeded — a failed/erroring SP
+    // must not wipe previously-synced phantom values with an empty set.
+    if (phantomOk) {
+      writes.push(
+        writeJson(`${slug}/data/kpi/${period}/phantom-channel.json`, phantomByChannel),
+        writeJson(`${slug}/data/kpi/${period}/phantom-store.json`, phantomByStore),
+        writeJson(`${slug}/data/kpi/${period}/phantom-product.json`, phantomByProduct),
+        writeJson(`${slug}/data/phantom/${period}/detail.json`, phantomRows)
+      );
+    }
+
+    await Promise.all(writes);
 
     // Save sync metadata
     const syncMeta = await readJson<Record<string, unknown>>(`${slug}/data/sync-meta.json`, {});
@@ -319,7 +336,10 @@ export async function POST(req: NextRequest) {
     syncMeta.salesStoreCount = salesStores.length;
     syncMeta.salesProductCount = salesProducts.length;
     syncMeta.oosDetailCount = oosRows.length;
-    syncMeta.phantomDetailCount = phantomRows.length;
+    // Preserve the previous phantom count if the SP failed (data was not rewritten).
+    if (phantomOk) syncMeta.phantomDetailCount = phantomRows.length;
+    syncMeta.phantomOk = phantomOk;
+    syncMeta.phantomError = phantomError;
     syncMeta.sqlClient = client;
     await writeJson(`${slug}/data/sync-meta.json`, syncMeta);
 
@@ -327,6 +347,8 @@ export async function POST(req: NextRequest) {
       {
         success: true,
         period,
+        phantomSkipped: !phantomOk,
+        phantomError: phantomOk ? undefined : phantomError,
         counts: {
           channels: channels.length,
           stores: stores.length,
@@ -336,7 +358,7 @@ export async function POST(req: NextRequest) {
           salesStores: salesStores.length,
           salesProducts: salesProducts.length,
           oosDetail: oosRows.length,
-          phantomDetail: phantomRows.length,
+          phantomDetail: phantomOk ? phantomRows.length : "(unchanged — SP failed)",
         },
       },
       { headers: noCacheHeaders() }
