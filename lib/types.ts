@@ -181,6 +181,7 @@ export interface ScorecardStore {
   channelId: string;
   channelName: string;
   region?: string;
+  siteCode?: string; // SQL SiteCode (e.g. "PNP-HC14") — used to map SP rows keyed by SiteCode
 }
 
 export interface ScorecardProduct {
@@ -273,6 +274,25 @@ export interface SqlPhantomDetailRow {
 
 export interface SqlBrand {
   Brand: string;
+}
+
+// Rows returned by the GetPhantomStock_PNP stored procedure (PnP channel).
+export interface SqlPhantomStockPnpRow {
+  Date: string;
+  "Date Last Sold": string | null;
+  SiteCode: string;
+  SiteName: string;
+  Channel: string;
+  SubChannel: string | null;
+  Province: string | null;
+  ChannelArticle: string;
+  "Product ID": string;
+  "Product Description": string;
+  "Product Status": string | null;
+  "Channel Product Status": string | null;
+  "Site Article Status": string | null;
+  "Ranging Status": string | null;
+  LatestSOH: number;
 }
 
 // ── Activity Log ──

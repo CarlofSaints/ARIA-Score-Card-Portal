@@ -186,3 +186,26 @@ export async function getOosDetail(client: string) {
 export async function getPhantomDetail(client: string, lookbackDays = 60) {
   return sqlQuery<SqlPhantomDetailRow>("phantom_detail", { client, lookbackDays });
 }
+
+// Rows returned by the GetPhantomStock_PNP stored procedure (PnP channel only).
+export interface SqlPhantomStockPnpRow {
+  Date: string;
+  "Date Last Sold": string | null;
+  SiteCode: string;
+  SiteName: string;
+  Channel: string;
+  SubChannel: string | null;
+  Province: string | null;
+  ChannelArticle: string;
+  "Product ID": string;
+  "Product Description": string;
+  "Product Status": string | null;
+  "Channel Product Status": string | null;
+  "Site Article Status": string | null;
+  "Ranging Status": string | null;
+  LatestSOH: number;
+}
+
+export async function getPhantomStockPnp(client: string, phantomDays = 60) {
+  return sqlQuery<SqlPhantomStockPnpRow>("phantom_stock_pnp", { client, phantomDays });
+}

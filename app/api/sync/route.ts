@@ -12,7 +12,7 @@ import {
   getYtdSalesByStore,
   getYtdSalesByProduct,
   getOosDetail,
-  getPhantomDetail,
+  getPhantomStockPnp,
 } from "@/lib/sqlProxy";
 import type {
   ScorecardChannel,
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     const client = config.sqlClientName;
-    const lookbackDays = config.phantomLookbackDays ?? 60;
+    const phantomDays = config.phantomLookbackDays ?? 60;
     const now = new Date();
     const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
       channelId: st.Channel,
       channelName: st.Channel,
       region: st.Province || undefined,
+      siteCode: st.SiteCode || undefined,
     }));
 
     // Transform products
@@ -86,7 +87,7 @@ export async function POST(req: NextRequest) {
       getYtdSalesByStore(client).catch(() => ({ data: [], count: 0 })),
       getYtdSalesByProduct(client).catch(() => ({ data: [], count: 0 })),
       getOosDetail(client).catch(() => ({ data: [], count: 0 })),
-      getPhantomDetail(client, lookbackDays).catch(() => ({ data: [], count: 0 })),
+      getPhantomStockPnp(client, phantomDays).catch(() => ({ data: [], count: 0 })),
       getClientBrands(client).catch(() => ({ data: [], count: 0 })),
     ]);
 
@@ -198,23 +199,41 @@ export async function POST(req: NextRequest) {
       oosByProduct[p.id] = Math.round((count / total) * 1000) / 10;
     }
 
-    // ── Aggregate Phantom: same pattern ──
-    const phantomRows = phantomRes.data;
+    // ── Aggregate Phantom (GetPhantomStock_PNP — PnP channel) ──
+    // One phantom record per store + product + snapshot date. ChannelArticle is
+    // preserved in the stored detail below, but is not part of the dedupe key.
+    const seenPhantom = new Set<string>();
+    const phantomRows = phantomRes.data.filter((row) => {
+      const key = `${row.SiteCode}|${row["Product ID"]}|${row.Date}`;
+      if (seenPhantom.has(key)) return false;
+      seenPhantom.add(key);
+      return true;
+    });
+
+    // Map SP rows (keyed by name / SiteCode / Product ID) to scorecard entity IDs.
+    const channelIdByName = new Map<string, string>(
+      channels.map((c) => [c.name, c.id] as [string, string])
+    );
+    const storeIdBySiteCode = new Map<string, string>(
+      stores
+        .filter((s) => s.siteCode)
+        .map((s) => [s.siteCode as string, s.id] as [string, string])
+    );
+    const productIdBySku = new Map<string, string>(
+      products.map((p) => [p.sku, p.id] as [string, string])
+    );
+
     const phantomCountByChannel: Record<string, number> = {};
     const phantomCountByStore: Record<string, number> = {};
     const phantomCountByProduct: Record<string, number> = {};
 
     for (const row of phantomRows) {
-      const ch = channels.find((c) => c.name === row.Channel);
-      if (ch) {
-        phantomCountByChannel[ch.id] = (phantomCountByChannel[ch.id] || 0) + 1;
-      }
-      const storeId = String(row.SiteID);
-      phantomCountByStore[storeId] = (phantomCountByStore[storeId] || 0) + 1;
-      const prod = products.find((p) => p.sku === row.SKU);
-      if (prod) {
-        phantomCountByProduct[prod.id] = (phantomCountByProduct[prod.id] || 0) + 1;
-      }
+      const chId = channelIdByName.get(row.Channel);
+      if (chId) phantomCountByChannel[chId] = (phantomCountByChannel[chId] || 0) + 1;
+      const storeId = storeIdBySiteCode.get(row.SiteCode);
+      if (storeId) phantomCountByStore[storeId] = (phantomCountByStore[storeId] || 0) + 1;
+      const prodId = productIdBySku.get(row["Product ID"]);
+      if (prodId) phantomCountByProduct[prodId] = (phantomCountByProduct[prodId] || 0) + 1;
     }
 
     const phantomByChannel: Record<string, number> = {};
