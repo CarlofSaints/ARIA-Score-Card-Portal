@@ -196,7 +196,8 @@ export interface ScorecardProduct {
 
 export interface KpiScore {
   kpiKey: KpiKey;
-  rawValue: number; // actual metric value
+  rawValue: number; // 0–100 performance value used for scoring (health-oriented)
+  percent?: number; // actual business metric % for display (e.g. phantom % = 12.8)
   score: number; // weighted score contribution
   maxScore: number; // maximum possible weighted score
 }

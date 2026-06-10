@@ -106,6 +106,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
                     className="text-center px-3 py-3 font-medium text-[var(--color-text-muted)]"
                   >
                     {kpi.shortLabel}
+                    <div className="text-[10px] font-normal opacity-60">% · score</div>
                   </th>
                 ))}
                 <th className="text-center px-4 py-3 font-medium text-[var(--color-text-muted)]">
@@ -129,8 +130,11 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
                     const ks = s.kpiScores.find((k) => k.kpiKey === kpi.key);
                     return (
                       <td key={kpi.key} className="text-center px-3 py-3">
+                        <div className="text-xs font-semibold text-[var(--color-text)]">
+                          {ks?.percent !== undefined ? `${ks.percent.toFixed(1)}%` : "—"}
+                        </div>
                         <span
-                          className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${scoreBg(
+                          className={`inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium ${scoreBg(
                             ks?.score ?? 0,
                             ks?.maxScore ?? 1
                           )} ${scoreColor(ks?.score ?? 0, ks?.maxScore ?? 1)}`}

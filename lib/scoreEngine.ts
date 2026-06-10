@@ -15,13 +15,15 @@ import type {
 export function calcKpiScore(
   kpiKey: KpiKey,
   rawValue: number,
-  weight: number
+  weight: number,
+  percent?: number
 ): KpiScore {
   const capped = Math.max(0, Math.min(100, rawValue));
   const score = Math.round((capped / 100) * weight * 10) / 10;
   return {
     kpiKey,
     rawValue: capped,
+    percent,
     score: Math.min(score, weight),
     maxScore: weight,
   };
@@ -35,12 +37,12 @@ export function calcEntityScore(params: {
   entityName: string;
   entityType: EntityScore["entityType"];
   period: string;
-  kpiValues: { key: KpiKey; value: number }[]; // value 0–100
+  kpiValues: { key: KpiKey; value: number; percent?: number }[]; // value 0–100
   weightings: KpiWeighting[];
 }): EntityScore {
   const kpiScores: KpiScore[] = params.kpiValues.map((kv) => {
     const w = params.weightings.find((w) => w.key === kv.key);
-    return calcKpiScore(kv.key, kv.value, w?.weight ?? 0);
+    return calcKpiScore(kv.key, kv.value, w?.weight ?? 0, kv.percent);
   });
 
   const totalScore = kpiScores.reduce((sum, k) => sum + k.score, 0);

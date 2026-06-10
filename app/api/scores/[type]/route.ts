@@ -70,11 +70,12 @@ export async function GET(
         const oosPercent = oosData[ch.id] ?? 50;
         const phantomPercent = phantomData[ch.id] ?? 50;
 
-        const kpiValues: { key: KpiKey; value: number }[] = [
-          { key: "sales_growth", value: sd ? calcSalesPerformance(sd) : 50 },
-          { key: "phantom_inventory", value: 100 - phantomPercent },
-          { key: "numerical_distribution", value: 50 },
-          { key: "oos", value: 100 - oosPercent },
+        const salesPerf = sd ? calcSalesPerformance(sd) : 50;
+        const kpiValues: { key: KpiKey; value: number; percent: number }[] = [
+          { key: "sales_growth", value: salesPerf, percent: salesPerf },
+          { key: "phantom_inventory", value: 100 - phantomPercent, percent: phantomPercent },
+          { key: "numerical_distribution", value: 50, percent: 50 },
+          { key: "oos", value: 100 - oosPercent, percent: oosPercent },
         ];
 
         return calcEntityScore({
@@ -101,11 +102,12 @@ export async function GET(
         const oosPercent = oosData[st.id] ?? 50;
         const phantomPercent = phantomData[st.id] ?? 50;
 
-        const kpiValues: { key: KpiKey; value: number }[] = [
-          { key: "sales_growth", value: sd ? calcSalesPerformance(sd) : 50 },
-          { key: "phantom_inventory", value: 100 - phantomPercent },
-          { key: "numerical_distribution", value: 50 },
-          { key: "oos", value: 100 - oosPercent },
+        const salesPerf = sd ? calcSalesPerformance(sd) : 50;
+        const kpiValues: { key: KpiKey; value: number; percent: number }[] = [
+          { key: "sales_growth", value: salesPerf, percent: salesPerf },
+          { key: "phantom_inventory", value: 100 - phantomPercent, percent: phantomPercent },
+          { key: "numerical_distribution", value: 50, percent: 50 },
+          { key: "oos", value: 100 - oosPercent, percent: oosPercent },
         ];
 
         return calcEntityScore({
@@ -132,11 +134,12 @@ export async function GET(
         const oosPercent = oosData[p.id] ?? 50;
         const phantomPercent = phantomData[p.id] ?? 50;
 
-        const kpiValues: { key: KpiKey; value: number }[] = [
-          { key: "sales_growth", value: sd ? calcSalesPerformance(sd) : 50 },
-          { key: "phantom_inventory", value: 100 - phantomPercent },
-          { key: "numerical_distribution", value: 50 },
-          { key: "oos", value: 100 - oosPercent },
+        const salesPerf = sd ? calcSalesPerformance(sd) : 50;
+        const kpiValues: { key: KpiKey; value: number; percent: number }[] = [
+          { key: "sales_growth", value: salesPerf, percent: salesPerf },
+          { key: "phantom_inventory", value: 100 - phantomPercent, percent: phantomPercent },
+          { key: "numerical_distribution", value: 50, percent: 50 },
+          { key: "oos", value: 100 - oosPercent, percent: oosPercent },
         ];
 
         return calcEntityScore({
@@ -184,11 +187,11 @@ export async function GET(
           ? camPhantomValues.reduce((a, b) => a + b, 0) / camPhantomValues.length
           : 50;
 
-        const kpiValues: { key: KpiKey; value: number }[] = [
-          { key: "sales_growth", value: camSales },
-          { key: "phantom_inventory", value: 100 - camPhantom },
-          { key: "numerical_distribution", value: 50 },
-          { key: "oos", value: 100 - camOos },
+        const kpiValues: { key: KpiKey; value: number; percent: number }[] = [
+          { key: "sales_growth", value: camSales, percent: camSales },
+          { key: "phantom_inventory", value: 100 - camPhantom, percent: camPhantom },
+          { key: "numerical_distribution", value: 50, percent: 50 },
+          { key: "oos", value: 100 - camOos, percent: camOos },
         ];
 
         return calcEntityScore({
