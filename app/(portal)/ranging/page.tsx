@@ -40,6 +40,7 @@ export default function RangingPage() {
   const [busy, setBusy] = useState(false);
   const [fileName, setFileName] = useState("");
   const [topError, setTopError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -195,7 +196,7 @@ export default function RangingPage() {
 
       {/* Upload */}
       {canManage && (
-        <div className="bg-white rounded-xl border border-[var(--color-border)] p-5 mb-6">
+        <div className="mb-6">
           <input
             ref={fileRef}
             type="file"
@@ -205,15 +206,66 @@ export default function RangingPage() {
               const f = e.target.files?.[0];
               if (f) handleFile(f);
             }}
-            className="block text-sm"
+            className="hidden"
           />
-          <p className="text-xs text-[var(--color-text-muted)] mt-2">
-            Large file — parsing happens in your browser and may take a few seconds.
-            {fileName && !busy ? ` Last file: ${fileName}` : ""}
-          </p>
-          {busy && (
-            <p className="text-sm text-[var(--color-primary)] mt-2">Processing {fileName}…</p>
-          )}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => !busy && fileRef.current?.click()}
+            onKeyDown={(e) => {
+              if ((e.key === "Enter" || e.key === " ") && !busy) {
+                e.preventDefault();
+                fileRef.current?.click();
+              }
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (!busy) setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              if (busy) return;
+              const f = e.dataTransfer.files?.[0];
+              if (f) handleFile(f);
+            }}
+            className={`rounded-xl border-2 border-dashed p-10 text-center transition-colors outline-none ${
+              busy
+                ? "opacity-70 cursor-wait border-[var(--color-border)] bg-white"
+                : dragOver
+                ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 cursor-pointer"
+                : "border-[var(--color-border)] bg-white cursor-pointer hover:border-[var(--color-primary)] hover:bg-[var(--color-bg)]"
+            }`}
+          >
+            <div
+              className="mx-auto mb-3 w-12 h-12 rounded-full flex items-center justify-center"
+              style={{
+                backgroundColor: "var(--color-primary)",
+                color: "white",
+              }}
+            >
+              <UploadCloudIcon />
+            </div>
+            <p className="text-base font-semibold text-[var(--color-text)]">
+              {busy
+                ? `Processing ${fileName}…`
+                : dragOver
+                ? "Drop to upload"
+                : "Drag & drop the Range Management workbook"}
+            </p>
+            {!busy && (
+              <p className="text-sm mt-1">
+                <span className="font-semibold text-[var(--color-primary)] underline">
+                  or click to browse
+                </span>
+              </p>
+            )}
+            <p className="text-xs text-[var(--color-text-muted)] mt-3">
+              .xlsx — parsed in your browser, may take a few seconds
+              {fileName && !busy ? ` · last: ${fileName}` : ""}
+            </p>
+          </div>
           {topError && <p className="text-sm text-red-600 mt-2">{topError}</p>}
         </div>
       )}
@@ -291,6 +343,17 @@ export default function RangingPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function UploadCloudIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 16l-4-4-4 4" />
+      <path d="M12 12v9" />
+      <path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3" />
+      <path d="M16 16l-4-4-4 4" />
+    </svg>
   );
 }
 
