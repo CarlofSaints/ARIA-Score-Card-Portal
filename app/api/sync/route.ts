@@ -235,47 +235,41 @@ export async function POST(req: NextRequest) {
       products.map((p) => [p.sku, p] as [string, ScorecardProduct])
     );
 
-    // Load uploaded ranging (Range Management workbook). It drives both the
-    // phantom % denominator (total ranged combos) and which phantom lines count
-    // toward the numerator (phantom AND ranged). Empty until a file is uploaded.
+    // Load uploaded ranging (Range Management workbook). Used ONLY for the
+    // phantom % denominator (total ranged combos per channel/store/product).
+    // The grid's ranged flag and the numerator come from the SP's Ranging
+    // Status — the file is not used to decide whether a line is ranged.
+    // The ranged % is only meaningful for the roll-up summaries (channel,
+    // product, and CAM via channels) — not individual stores — so we build
+    // ranged totals by channel and by product only.
     const ranging = await loadAllRanging(slug);
-    const rangedSet = new Set<string>();
-    const rangedByStoreCode: Record<string, number> = {};
     const rangedByProductId: Record<string, number> = {};
     const rangedTotalByChannelName: Record<string, number> = {};
     for (const rc of ranging) {
       rangedTotalByChannelName[rc.channel] =
         (rangedTotalByChannelName[rc.channel] || 0) + rc.total;
-      for (const pair of rc.pairs) rangedSet.add(pair);
-      for (const [sc, n] of Object.entries(rc.byStore))
-        rangedByStoreCode[sc] = (rangedByStoreCode[sc] || 0) + n;
       for (const [pid, n] of Object.entries(rc.byProduct))
         rangedByProductId[pid] = (rangedByProductId[pid] || 0) + n;
     }
-    const hasRanging = rangedSet.size > 0;
+    const hasRanging = ranging.some((r) => r.total > 0);
 
     const phantomCountByChannel: Record<string, number> = {};
     const phantomCountByStore: Record<string, number> = {};
     const phantomCountByProduct: Record<string, number> = {};
 
     // Enriched detail rows for the phantom store page. Channel is derived from
-    // the store (the SP no longer reliably returns a Channel column). When a
-    // range file is loaded it is authoritative for the `ranged` flag; otherwise
-    // we fall back to the SP's Ranging Status. The phantom % numerator counts
-    // only ranged lines once ranging is known.
+    // the store (the SP no longer reliably returns a Channel column). The
+    // `ranged` flag comes from the SP's Ranging Status (the range file is used
+    // only for the denominator). The numerator counts only SP-ranged lines once
+    // a range file is loaded; before that it counts all phantom lines (legacy).
     const phantomRows: PhantomDetailRow[] = dedupedPhantom.map((row) => {
       const store = storeBySiteCode.get(row.SiteCode);
       const product = productBySku.get(row["Product ID"]);
       const channelId = store ? channelIdByName.get(store.channelName) : undefined;
 
       const spRanging = String(row["Ranging Status"] ?? "").toLowerCase();
-      const spRanged = spRanging === "true" ? true : spRanging === "false" ? false : null;
-      const ranged = hasRanging
-        ? rangedSet.has(`${row.SiteCode}|${row["Product ID"]}`)
-        : spRanged;
+      const ranged = spRanging === "true" ? true : spRanging === "false" ? false : null;
 
-      // Numerator: when ranging is known, count only ranged phantom lines;
-      // before any range file is uploaded, count all phantom lines (legacy).
       if (!hasRanging || ranged === true) {
         if (channelId)
           phantomCountByChannel[channelId] = (phantomCountByChannel[channelId] || 0) + 1;
@@ -316,13 +310,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Store-level phantom % is intentionally not computed from the ranged
+    // denominator — the ranged % is only relevant to the roll-up summaries.
+    // The Phantom Stock page just lists the lines per store. Before any range
+    // file is uploaded, keep the legacy store basis so nothing breaks.
     const phantomByStore: Record<string, number> = {};
-    for (const st of stores) {
-      const count = phantomCountByStore[st.id] || 0;
-      if (hasRanging) {
-        const total = st.siteCode ? rangedByStoreCode[st.siteCode] || 0 : 0;
-        if (total > 0) phantomByStore[st.id] = Math.round((count / total) * 1000) / 10;
-      } else {
+    if (!hasRanging) {
+      for (const st of stores) {
+        const count = phantomCountByStore[st.id] || 0;
         const total = oosTotalByStore[st.id] || 1;
         phantomByStore[st.id] = Math.round((count / total) * 1000) / 10;
       }
