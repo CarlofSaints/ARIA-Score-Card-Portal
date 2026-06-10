@@ -315,6 +315,30 @@ export interface PhantomDetailRow {
   dateLastSold: string | null; // from SP "Date Last Sold"; null if absent
 }
 
+// ── Ranging (denominator source — uploaded Range Management workbook) ──
+// One record per channel (RANGE_<CHANNEL> sheet). "Ranged" = RangeIndicator true.
+export interface RangingChannelData {
+  channel: string; // e.g. "PNP" (from sheet RANGE_PNP)
+  total: number; // total ranged (true) site-SKU combos
+  byStore: Record<string, number>; // SiteCode -> ranged count
+  byProduct: Record<string, number>; // ProductID -> ranged count
+  pairs: string[]; // "SiteCode|ProductID" for every ranged=true combo
+  rowsScanned: number; // total rows in the sheet (true + false)
+  sourceFile?: string;
+  uploadedAt: string; // ISO
+}
+
+// Lightweight index entry (no pairs) for listing loaded ranging on the UI.
+export interface RangingIndexEntry {
+  channel: string;
+  total: number;
+  stores: number;
+  products: number;
+  rowsScanned: number;
+  sourceFile?: string;
+  uploadedAt: string;
+}
+
 // ── Activity Log ──
 
 export interface ActivityLogEntry {

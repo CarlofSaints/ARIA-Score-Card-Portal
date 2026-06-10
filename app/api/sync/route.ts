@@ -3,6 +3,7 @@ import { requireRole, handleAuthError, noCacheHeaders } from "@/lib/auth";
 import { getTenantSlug } from "@/lib/getTenantSlug";
 import { getTenantConfig } from "@/lib/getTenantConfig";
 import { writeJson, readJson } from "@/lib/blob";
+import { loadAllRanging } from "@/lib/rangingData";
 import {
   getClientChannels,
   getClientStores,
@@ -234,23 +235,54 @@ export async function POST(req: NextRequest) {
       products.map((p) => [p.sku, p] as [string, ScorecardProduct])
     );
 
+    // Load uploaded ranging (Range Management workbook). It drives both the
+    // phantom % denominator (total ranged combos) and which phantom lines count
+    // toward the numerator (phantom AND ranged). Empty until a file is uploaded.
+    const ranging = await loadAllRanging(slug);
+    const rangedSet = new Set<string>();
+    const rangedByStoreCode: Record<string, number> = {};
+    const rangedByProductId: Record<string, number> = {};
+    const rangedTotalByChannelName: Record<string, number> = {};
+    for (const rc of ranging) {
+      rangedTotalByChannelName[rc.channel] =
+        (rangedTotalByChannelName[rc.channel] || 0) + rc.total;
+      for (const pair of rc.pairs) rangedSet.add(pair);
+      for (const [sc, n] of Object.entries(rc.byStore))
+        rangedByStoreCode[sc] = (rangedByStoreCode[sc] || 0) + n;
+      for (const [pid, n] of Object.entries(rc.byProduct))
+        rangedByProductId[pid] = (rangedByProductId[pid] || 0) + n;
+    }
+    const hasRanging = rangedSet.size > 0;
+
     const phantomCountByChannel: Record<string, number> = {};
     const phantomCountByStore: Record<string, number> = {};
     const phantomCountByProduct: Record<string, number> = {};
 
     // Enriched detail rows for the phantom store page. Channel is derived from
-    // the store (the SP no longer reliably returns a Channel column).
+    // the store (the SP no longer reliably returns a Channel column). When a
+    // range file is loaded it is authoritative for the `ranged` flag; otherwise
+    // we fall back to the SP's Ranging Status. The phantom % numerator counts
+    // only ranged lines once ranging is known.
     const phantomRows: PhantomDetailRow[] = dedupedPhantom.map((row) => {
       const store = storeBySiteCode.get(row.SiteCode);
       const product = productBySku.get(row["Product ID"]);
       const channelId = store ? channelIdByName.get(store.channelName) : undefined;
 
-      if (channelId)
-        phantomCountByChannel[channelId] = (phantomCountByChannel[channelId] || 0) + 1;
-      if (store) phantomCountByStore[store.id] = (phantomCountByStore[store.id] || 0) + 1;
-      if (product) phantomCountByProduct[product.id] = (phantomCountByProduct[product.id] || 0) + 1;
+      const spRanging = String(row["Ranging Status"] ?? "").toLowerCase();
+      const spRanged = spRanging === "true" ? true : spRanging === "false" ? false : null;
+      const ranged = hasRanging
+        ? rangedSet.has(`${row.SiteCode}|${row["Product ID"]}`)
+        : spRanged;
 
-      const ranging = String(row["Ranging Status"] ?? "").toLowerCase();
+      // Numerator: when ranging is known, count only ranged phantom lines;
+      // before any range file is uploaded, count all phantom lines (legacy).
+      if (!hasRanging || ranged === true) {
+        if (channelId)
+          phantomCountByChannel[channelId] = (phantomCountByChannel[channelId] || 0) + 1;
+        if (store) phantomCountByStore[store.id] = (phantomCountByStore[store.id] || 0) + 1;
+        if (product) phantomCountByProduct[product.id] = (phantomCountByProduct[product.id] || 0) + 1;
+      }
+
       return {
         siteCode: row.SiteCode,
         storeName: store?.name || row.SiteCode,
@@ -262,32 +294,50 @@ export async function POST(req: NextRequest) {
         brand: product?.brand || "",
         channelArticle: row.ChannelArticle,
         siteArticleStatus: String(row["Site Article Status"] ?? ""),
-        ranged: ranging === "true" ? true : ranging === "false" ? false : null,
+        ranged,
         soh: row.LatestSOH,
         date: row.Date,
         dateLastSold: row["Date Last Sold"] ?? null,
       };
     });
 
+    // Phantom % = ranged-phantom ÷ ranged-total when a range file is loaded
+    // (only ranged entities get a score; others are left N/A → neutral). Before
+    // any range file is uploaded, fall back to the legacy stores×products basis.
     const phantomByChannel: Record<string, number> = {};
     for (const ch of channels) {
       const count = phantomCountByChannel[ch.id] || 0;
-      const total = oosTotalByChannel[ch.id] || 1; // same denominator
-      phantomByChannel[ch.id] = Math.round((count / total) * 1000) / 10;
+      if (hasRanging) {
+        const total = rangedTotalByChannelName[ch.name] || 0;
+        if (total > 0) phantomByChannel[ch.id] = Math.round((count / total) * 1000) / 10;
+      } else {
+        const total = oosTotalByChannel[ch.id] || 1;
+        phantomByChannel[ch.id] = Math.round((count / total) * 1000) / 10;
+      }
     }
 
     const phantomByStore: Record<string, number> = {};
     for (const st of stores) {
       const count = phantomCountByStore[st.id] || 0;
-      const total = oosTotalByStore[st.id] || 1;
-      phantomByStore[st.id] = Math.round((count / total) * 1000) / 10;
+      if (hasRanging) {
+        const total = st.siteCode ? rangedByStoreCode[st.siteCode] || 0 : 0;
+        if (total > 0) phantomByStore[st.id] = Math.round((count / total) * 1000) / 10;
+      } else {
+        const total = oosTotalByStore[st.id] || 1;
+        phantomByStore[st.id] = Math.round((count / total) * 1000) / 10;
+      }
     }
 
     const phantomByProduct: Record<string, number> = {};
     for (const p of products) {
       const count = phantomCountByProduct[p.id] || 0;
-      const total = oosTotalByProduct[p.id] || 1;
-      phantomByProduct[p.id] = Math.round((count / total) * 1000) / 10;
+      if (hasRanging) {
+        const total = rangedByProductId[p.sku] || 0;
+        if (total > 0) phantomByProduct[p.id] = Math.round((count / total) * 1000) / 10;
+      } else {
+        const total = oosTotalByProduct[p.id] || 1;
+        phantomByProduct[p.id] = Math.round((count / total) * 1000) / 10;
+      }
     }
 
     // Extract brand list
@@ -342,6 +392,8 @@ export async function POST(req: NextRequest) {
     if (phantomOk) syncMeta.phantomDetailCount = phantomRows.length;
     syncMeta.phantomOk = phantomOk;
     syncMeta.phantomError = phantomError;
+    syncMeta.phantomBasis = hasRanging ? "ranged (range file)" : "legacy (stores×products)";
+    syncMeta.rangedChannels = ranging.map((r) => r.channel);
     syncMeta.sqlClient = client;
     await writeJson(`${slug}/data/sync-meta.json`, syncMeta);
 
