@@ -5,22 +5,29 @@ import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import type { CamMapping, ScorecardChannel } from "@/lib/types";
 
+interface CamUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
+
 export default function CamMappingPage() {
   const { user, loading, hasRole } = useAuth();
   const router = useRouter();
 
   const [mappings, setMappings] = useState<CamMapping[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [camName, setCamName] = useState("");
-  const [camEmail, setCamEmail] = useState("");
+  const [selectedCamId, setSelectedCamId] = useState("");
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Available options from SQL data
+  // Available options from SQL data + CAM users from the user list
   const [availableChannels, setAvailableChannels] = useState<ScorecardChannel[]>([]);
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
+  const [availableCams, setAvailableCams] = useState<CamUser[]>([]);
 
   useEffect(() => {
     if (!loading && !hasRole("admin")) {
@@ -45,14 +52,19 @@ export default function CamMappingPage() {
 
   async function loadOptions() {
     try {
-      const [chRes, brRes] = await Promise.all([
+      const [chRes, brRes, usrRes] = await Promise.all([
         authFetch("/api/data/channels"),
         authFetch("/api/data/brands"),
+        authFetch("/api/users"),
       ]);
       const chData = await chRes.json();
       const brData = await brRes.json();
+      const usrData = await usrRes.json();
       setAvailableChannels(chData.channels || []);
       setAvailableBrands(brData.brands || []);
+      setAvailableCams(
+        (usrData.users || []).filter((u: CamUser) => u.role === "cam")
+      );
     } catch { /* ignore */ }
   }
 
@@ -71,15 +83,20 @@ export default function CamMappingPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    const cam = availableCams.find((c) => c.id === selectedCamId);
+    if (!cam) {
+      setError("Select a CAM");
+      return;
+    }
     setSaving(true);
 
     try {
       const res = await authFetch("/api/cam-mappings", {
         method: "POST",
         body: JSON.stringify({
-          camUserId: camEmail,
-          camName,
-          camEmail,
+          camUserId: cam.id,
+          camName: cam.name,
           channelIds: selectedChannels,
           brandIds: selectedBrands,
         }),
@@ -92,8 +109,7 @@ export default function CamMappingPage() {
       }
 
       setShowForm(false);
-      setCamName("");
-      setCamEmail("");
+      setSelectedCamId("");
       setSelectedChannels([]);
       setSelectedBrands([]);
       loadMappings();
@@ -148,27 +164,28 @@ export default function CamMappingPage() {
               {error}
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium mb-1.5">CAM Name *</label>
-              <input
-                type="text"
-                value={camName}
-                onChange={(e) => setCamName(e.target.value)}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1.5">CAM *</label>
+            {availableCams.length > 0 ? (
+              <select
+                value={selectedCamId}
+                onChange={(e) => setSelectedCamId(e.target.value)}
                 required
-                className="w-full rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm focus:border-[var(--color-primary)] focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5">CAM Email *</label>
-              <input
-                type="email"
-                value={camEmail}
-                onChange={(e) => setCamEmail(e.target.value)}
-                required
-                className="w-full rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm focus:border-[var(--color-primary)] focus:outline-none"
-              />
-            </div>
+                className="w-full rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm bg-white focus:border-[var(--color-primary)] focus:outline-none"
+              >
+                <option value="">Select a CAM…</option>
+                {availableCams.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-xs text-amber-700">
+                No CAM users found. Create users with the <strong>CAM</strong> role in the Admin
+                section first.
+              </p>
+            )}
           </div>
 
           {/* Channels multi-select */}
@@ -250,7 +267,6 @@ export default function CamMappingPage() {
             <thead className="bg-[var(--color-bg)]">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">CAM</th>
-                <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">Channels</th>
                 <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">Brands</th>
                 <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">Actions</th>
@@ -260,7 +276,6 @@ export default function CamMappingPage() {
               {mappings.map((m) => (
                 <tr key={m.id} className="border-t border-[var(--color-border)]">
                   <td className="px-4 py-3 font-medium">{m.camName}</td>
-                  <td className="px-4 py-3 text-[var(--color-text-muted)]">{m.camEmail}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       {m.channelIds.map((c) => (
@@ -291,7 +306,7 @@ export default function CamMappingPage() {
               ))}
               {mappings.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-[var(--color-text-muted)]">
+                  <td colSpan={4} className="px-4 py-8 text-center text-[var(--color-text-muted)]">
                     No CAM mappings configured
                   </td>
                 </tr>

@@ -161,9 +161,9 @@ export interface PasswordResetToken {
 
 export interface CamMapping {
   id: string;
-  camUserId: string;
-  camName: string;
-  camEmail: string;
+  camUserId: string; // references a User (role "cam")
+  camName: string; // denormalised from the user for display
+  camEmail?: string; // deprecated — CAM is now chosen from the user list
   channelIds: string[];
   brandIds: string[];
 }
