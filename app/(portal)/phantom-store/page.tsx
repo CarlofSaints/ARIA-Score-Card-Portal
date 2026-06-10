@@ -5,8 +5,23 @@ import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import type { PhantomDetailRow } from "@/lib/types";
 
-type SortKey = "storeName" | "brand" | "productName" | "siteArticleStatus" | "soh" | "ranged";
+type SortKey =
+  | "storeName"
+  | "subChannel"
+  | "brand"
+  | "productName"
+  | "siteArticleStatus"
+  | "soh"
+  | "dateLastSold"
+  | "ranged";
 type RangedFilter = "all" | "ranged" | "not" | "unknown";
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
 
 export default function PhantomStorePage() {
   const { user, loading } = useAuth();
@@ -18,6 +33,7 @@ export default function PhantomStorePage() {
 
   const [storeSearch, setStoreSearch] = useState("");
   const [brand, setBrand] = useState("all");
+  const [subChannel, setSubChannel] = useState("all");
   const [ranged, setRanged] = useState<RangedFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("soh");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -43,17 +59,23 @@ export default function PhantomStorePage() {
     [rows]
   );
 
+  const subChannels = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.subChannel).filter(Boolean))).sort(),
+    [rows]
+  );
+
   const filtered = useMemo(() => {
     const q = storeSearch.trim().toLowerCase();
     return rows.filter((r) => {
       if (q && !`${r.storeName} ${r.siteCode}`.toLowerCase().includes(q)) return false;
       if (brand !== "all" && r.brand !== brand) return false;
+      if (subChannel !== "all" && r.subChannel !== subChannel) return false;
       if (ranged === "ranged" && r.ranged !== true) return false;
       if (ranged === "not" && r.ranged !== false) return false;
       if (ranged === "unknown" && r.ranged !== null) return false;
       return true;
     });
-  }, [rows, storeSearch, brand, ranged]);
+  }, [rows, storeSearch, brand, subChannel, ranged]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -126,6 +148,18 @@ export default function PhantomStorePage() {
           ))}
         </select>
         <select
+          value={subChannel}
+          onChange={(e) => setSubChannel(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
+        >
+          <option value="all">All sub-channels</option>
+          {subChannels.map((sc) => (
+            <option key={sc} value={sc}>
+              {sc}
+            </option>
+          ))}
+        </select>
+        <select
           value={ranged}
           onChange={(e) => setRanged(e.target.value as RangedFilter)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
@@ -153,10 +187,12 @@ export default function PhantomStorePage() {
               <thead className="sticky top-0 bg-[var(--color-bg)] z-10">
                 <tr className="text-left text-[var(--color-text-muted)]">
                   <Th label="Store" k="storeName" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                  <Th label="Sub-Channel" k="subChannel" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <Th label="Product" k="productName" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <Th label="Brand" k="brand" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <Th label="Site Status" k="siteArticleStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <Th label="SOH" k="soh" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
+                  <Th label="Last Sold" k="dateLastSold" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <Th label="Ranged" k="ranged" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="center" />
                 </tr>
               </thead>
@@ -170,6 +206,7 @@ export default function PhantomStorePage() {
                       <div className="font-medium text-[var(--color-text)]">{r.storeName}</div>
                       <div className="text-xs text-[var(--color-text-muted)]">{r.siteCode}</div>
                     </td>
+                    <td className="px-3 py-2 text-[var(--color-text)]">{r.subChannel || "—"}</td>
                     <td className="px-3 py-2">
                       <div className="text-[var(--color-text)]">{r.productName}</div>
                       <div className="text-xs text-[var(--color-text-muted)]">{r.channelArticle}</div>
@@ -182,6 +219,9 @@ export default function PhantomStorePage() {
                       }`}
                     >
                       {r.soh}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-[var(--color-text)]">
+                      {formatDate(r.dateLastSold)}
                     </td>
                     <td className="px-3 py-2 text-center">
                       <RangedBadge ranged={r.ranged} />

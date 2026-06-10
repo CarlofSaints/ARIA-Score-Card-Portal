@@ -302,6 +302,7 @@ export interface PhantomDetailRow {
   siteCode: string;
   storeName: string;
   channelName: string;
+  subChannel: string; // from SP SubChannel (CORP/HYPER/FRANCHISE/DC); "" if absent
   province: string;
   productId: string;
   productName: string;
@@ -311,6 +312,7 @@ export interface PhantomDetailRow {
   ranged: boolean | null; // from SP "Ranging Status"; null when unknown
   soh: number;
   date: string; // snapshot date (ISO)
+  dateLastSold: string | null; // from SP "Date Last Sold"; null if absent
 }
 
 // ── Activity Log ──

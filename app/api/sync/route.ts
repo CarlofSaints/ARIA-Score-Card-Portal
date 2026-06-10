@@ -255,6 +255,7 @@ export async function POST(req: NextRequest) {
         siteCode: row.SiteCode,
         storeName: store?.name || row.SiteCode,
         channelName: store?.channelName || "",
+        subChannel: String(row.SubChannel ?? ""),
         province: store?.region || "",
         productId: row["Product ID"],
         productName: product?.name || row["Product ID"],
@@ -264,6 +265,7 @@ export async function POST(req: NextRequest) {
         ranged: ranging === "true" ? true : ranging === "false" ? false : null,
         soh: row.LatestSOH,
         date: row.Date,
+        dateLastSold: row["Date Last Sold"] ?? null,
       };
     });
 
