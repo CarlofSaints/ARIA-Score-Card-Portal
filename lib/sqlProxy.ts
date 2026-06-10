@@ -46,22 +46,27 @@ export interface SqlClient {
   Status: string;
 }
 
+// Actual columns returned by GetClientRetailChannels (Channel name only).
 export interface SqlChannel {
   Channel: string;
-  ChannelDataID: number;
 }
 
+// Actual columns returned by GetClientRetailSites. SiteID is the site code
+// string (e.g. "PNP-HC14"); the display name is "Site Name" (with a space).
 export interface SqlStore {
-  SiteID: number;
-  SiteCode: string;
-  SiteName: string;
+  SiteID: string;
+  "Site Name": string;
   Channel: string;
+  SubChannel: string | null;
   Province: string | null;
-  TownCity: string | null;
+  Status?: string | null;
+  Country?: string | null;
+  "Site Tags"?: string | null;
 }
 
+// Actual columns returned by GetDataForPowerBI_Products. The product key is
+// "Client Product ID" (there is no numeric ID column).
 export interface SqlProduct {
-  ID: number;
   "Client Product ID": string;
   "Product Brand": string | null;
   "Product Category": string | null;

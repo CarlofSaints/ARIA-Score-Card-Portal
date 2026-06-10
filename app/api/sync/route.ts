@@ -51,25 +51,26 @@ export async function POST(req: NextRequest) {
         getClientProducts(client),
       ]);
 
-    // Transform channels
+    // Transform channels — no ChannelDataID exists; the channel name is the id.
     const channels: ScorecardChannel[] = channelsRes.data.map((ch) => ({
-      id: String(ch.ChannelDataID),
+      id: ch.Channel,
       name: ch.Channel,
     }));
 
-    // Transform stores
+    // Transform stores — SiteID is the site code string (e.g. "PNP-HC14"); the
+    // display name lives in "Site Name". Use SiteID as both id and siteCode.
     const stores: ScorecardStore[] = storesRes.data.map((st) => ({
       id: String(st.SiteID),
-      name: st.SiteName,
+      name: st["Site Name"] || String(st.SiteID),
       channelId: st.Channel,
       channelName: st.Channel,
       region: st.Province || undefined,
-      siteCode: st.SiteCode || undefined,
+      siteCode: String(st.SiteID),
     }));
 
-    // Transform products
+    // Transform products — the product key is "Client Product ID" (no ID column).
     const products: ScorecardProduct[] = productsRes.data.map((p) => ({
-      id: String(p.ID),
+      id: p["Client Product ID"],
       name: p["Product Description"] || p["Client Product ID"],
       sku: p["Client Product ID"],
       brand: p["Product Brand"] || "Unknown",
