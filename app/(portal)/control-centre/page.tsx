@@ -39,6 +39,12 @@ export default function ControlCentrePage() {
   const [phantomSaving, setPhantomSaving] = useState(false);
   const [phantomMessage, setPhantomMessage] = useState("");
 
+  // Auto-sync schedule (per-tenant, whole hours in SAST)
+  const [syncTimes, setSyncTimes] = useState<string[]>([]);
+  const [addHour, setAddHour] = useState("08:00");
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleMessage, setScheduleMessage] = useState("");
+
   useEffect(() => {
     if (!loading && !hasRole("admin")) {
       router.push("/");
@@ -61,6 +67,13 @@ export default function ControlCentrePage() {
         .then((r) => r.json())
         .then((data) => {
           if (data.phantomLookbackDays) setPhantomDays(data.phantomLookbackDays);
+        })
+        .catch(() => {});
+
+      authFetch("/api/tenant-config/sync-schedule")
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data.syncTimes)) setSyncTimes(data.syncTimes);
         })
         .catch(() => {});
     }
@@ -137,10 +150,10 @@ export default function ControlCentrePage() {
       });
       if (res.ok) {
         // The lookback only changes the phantom data once a sync re-runs the SP,
-        // so trigger a resync automatically the moment the setting is saved.
-        setPhantomMessage("Saved · re-syncing…");
-        await runSync();
-        setPhantomMessage("Saved & re-synced");
+        // so kick off a resync — fire-and-forget so the Save button releases
+        // immediately and the Data Sync section shows its own progress.
+        setPhantomMessage("Saved · re-syncing in the background…");
+        void runSync();
       } else {
         setPhantomMessage("Failed to save");
       }
@@ -148,6 +161,40 @@ export default function ControlCentrePage() {
       setPhantomMessage("Network error");
     } finally {
       setPhantomSaving(false);
+    }
+  }
+
+  function addScheduleTime() {
+    setScheduleMessage("");
+    setSyncTimes((prev) =>
+      prev.includes(addHour) ? prev : [...prev, addHour].sort()
+    );
+  }
+
+  function removeScheduleTime(t: string) {
+    setScheduleMessage("");
+    setSyncTimes((prev) => prev.filter((x) => x !== t));
+  }
+
+  async function handleScheduleSave() {
+    setScheduleMessage("");
+    setScheduleSaving(true);
+    try {
+      const res = await authFetch("/api/tenant-config/sync-schedule", {
+        method: "PUT",
+        body: JSON.stringify({ syncTimes }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.syncTimes)) setSyncTimes(data.syncTimes);
+        setScheduleMessage("Saved successfully");
+      } else {
+        setScheduleMessage("Failed to save");
+      }
+    } catch {
+      setScheduleMessage("Network error");
+    } finally {
+      setScheduleSaving(false);
     }
   }
 
@@ -263,6 +310,87 @@ export default function ControlCentrePage() {
           Products where SOH has not changed and no sales have been recorded in the last {phantomDays} days
           will be flagged as phantom stock. After changing this, run a sync to recalculate.
         </p>
+      </section>
+
+      {/* Auto-Sync Schedule */}
+      <section className="bg-white rounded-xl border border-[var(--color-border)] p-6 mb-6">
+        <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">
+          Auto-Sync Schedule
+        </h2>
+        <p className="text-sm text-[var(--color-text-muted)] mb-4">
+          Automatically pull fresh data from SQL Server at set times each day (South African time).
+          For example, add 08:00 and 14:00 to refresh every morning and afternoon. Leave empty to
+          sync manually only.
+        </p>
+
+        <div className="flex flex-wrap items-end gap-3 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+              Add a time
+            </label>
+            <select
+              value={addHour}
+              onChange={(e) => setAddHour(e.target.value)}
+              className="rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm bg-white focus:border-[var(--color-primary)] focus:outline-none"
+            >
+              {Array.from({ length: 24 }, (_, h) => {
+                const v = `${String(h).padStart(2, "0")}:00`;
+                return (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={addScheduleTime}
+            className="px-4 py-2.5 rounded-lg border border-[var(--color-primary)] text-[var(--color-primary)] text-sm font-medium"
+          >
+            + Add
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-4 min-h-[2rem]">
+          {syncTimes.length === 0 ? (
+            <span className="text-sm text-[var(--color-text-muted)]">
+              No scheduled syncs — data refreshes only when you click Sync Now.
+            </span>
+          ) : (
+            syncTimes.map((t) => (
+              <span
+                key={t}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-text)] text-sm font-medium"
+              >
+                {t}
+                <button
+                  type="button"
+                  onClick={() => removeScheduleTime(t)}
+                  className="text-[var(--color-text-muted)] hover:text-red-600"
+                  aria-label={`Remove ${t}`}
+                >
+                  &times;
+                </button>
+              </span>
+            ))
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleScheduleSave}
+            disabled={scheduleSaving}
+            className="px-6 py-2.5 rounded-lg bg-[var(--color-primary)] text-sm font-medium text-white disabled:opacity-50"
+          >
+            {scheduleSaving ? "Saving..." : "Save Schedule"}
+          </button>
+          {scheduleMessage && (
+            <span className={`text-sm ${scheduleMessage.includes("Saved") ? "text-green-600" : "text-red-600"}`}>
+              {scheduleMessage}
+            </span>
+          )}
+        </div>
       </section>
 
       {/* Data Sync */}
