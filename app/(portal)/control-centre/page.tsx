@@ -95,6 +95,38 @@ export default function ControlCentrePage() {
     }
   }
 
+  async function runSync() {
+    setSyncing(true);
+    setSyncMessage("");
+    try {
+      const res = await authFetch("/api/sync", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncMessage(
+          `Synced: ${data.counts.channels} channels, ${data.counts.stores} stores, ${data.counts.products} products, ${data.counts.oosDetail} OOS, ${data.counts.phantomDetail} phantom`
+        );
+        setSyncMeta({
+          lastSync: new Date().toISOString(),
+          channelCount: data.counts.channels,
+          storeCount: data.counts.stores,
+          productCount: data.counts.products,
+          brandCount: data.counts.brands,
+          salesChannelCount: data.counts.salesChannels,
+          salesStoreCount: data.counts.salesStores,
+          salesProductCount: data.counts.salesProducts,
+          oosDetailCount: data.counts.oosDetail,
+          phantomDetailCount: data.counts.phantomDetail,
+        });
+      } else {
+        setSyncMessage(data.error || "Sync failed");
+      }
+    } catch {
+      setSyncMessage("Network error during sync");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function handlePhantomSave() {
     setPhantomMessage("");
     setPhantomSaving(true);
@@ -103,8 +135,15 @@ export default function ControlCentrePage() {
         method: "PUT",
         body: JSON.stringify({ phantomLookbackDays: phantomDays }),
       });
-      if (res.ok) setPhantomMessage("Saved successfully");
-      else setPhantomMessage("Failed to save");
+      if (res.ok) {
+        // The lookback only changes the phantom data once a sync re-runs the SP,
+        // so trigger a resync automatically the moment the setting is saved.
+        setPhantomMessage("Saved · re-syncing…");
+        await runSync();
+        setPhantomMessage("Saved & re-synced");
+      } else {
+        setPhantomMessage("Failed to save");
+      }
     } catch {
       setPhantomMessage("Network error");
     } finally {
@@ -282,37 +321,7 @@ export default function ControlCentrePage() {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={async () => {
-              setSyncing(true);
-              setSyncMessage("");
-              try {
-                const res = await authFetch("/api/sync", { method: "POST" });
-                const data = await res.json();
-                if (res.ok) {
-                  setSyncMessage(
-                    `Synced: ${data.counts.channels} channels, ${data.counts.stores} stores, ${data.counts.products} products, ${data.counts.oosDetail} OOS, ${data.counts.phantomDetail} phantom`
-                  );
-                  setSyncMeta({
-                    lastSync: new Date().toISOString(),
-                    channelCount: data.counts.channels,
-                    storeCount: data.counts.stores,
-                    productCount: data.counts.products,
-                    brandCount: data.counts.brands,
-                    salesChannelCount: data.counts.salesChannels,
-                    salesStoreCount: data.counts.salesStores,
-                    salesProductCount: data.counts.salesProducts,
-                    oosDetailCount: data.counts.oosDetail,
-                    phantomDetailCount: data.counts.phantomDetail,
-                  });
-                } else {
-                  setSyncMessage(data.error || "Sync failed");
-                }
-              } catch {
-                setSyncMessage("Network error during sync");
-              } finally {
-                setSyncing(false);
-              }
-            }}
+            onClick={runSync}
             disabled={syncing}
             className="px-6 py-2 rounded-lg bg-[var(--color-primary)] text-sm font-medium text-white disabled:opacity-50"
           >

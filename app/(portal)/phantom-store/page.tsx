@@ -29,10 +29,12 @@ export default function PhantomStorePage() {
 
   const [rows, setRows] = useState<PhantomDetailRow[]>([]);
   const [period, setPeriod] = useState<string>("");
+  const [phantomDays, setPhantomDays] = useState<number | null>(null);
   const [fetching, setFetching] = useState(true);
 
   const [storeSearch, setStoreSearch] = useState("");
   const [brand, setBrand] = useState("all");
+  const [channel, setChannel] = useState("all");
   const [subChannel, setSubChannel] = useState("all");
   const [ranged, setRanged] = useState<RangedFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("soh");
@@ -49,6 +51,7 @@ export default function PhantomStorePage() {
       .then((d) => {
         setRows(Array.isArray(d.rows) ? d.rows : []);
         setPeriod(d.period || "");
+        setPhantomDays(typeof d.phantomDays === "number" ? d.phantomDays : null);
       })
       .catch(() => {})
       .finally(() => setFetching(false));
@@ -56,6 +59,11 @@ export default function PhantomStorePage() {
 
   const brands = useMemo(
     () => Array.from(new Set(rows.map((r) => r.brand).filter(Boolean))).sort(),
+    [rows]
+  );
+
+  const channels = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.channelName).filter(Boolean))).sort(),
     [rows]
   );
 
@@ -69,13 +77,14 @@ export default function PhantomStorePage() {
     return rows.filter((r) => {
       if (q && !`${r.storeName} ${r.siteCode}`.toLowerCase().includes(q)) return false;
       if (brand !== "all" && r.brand !== brand) return false;
+      if (channel !== "all" && r.channelName !== channel) return false;
       if (subChannel !== "all" && r.subChannel !== subChannel) return false;
       if (ranged === "ranged" && r.ranged !== true) return false;
       if (ranged === "not" && r.ranged !== false) return false;
       if (ranged === "unknown" && r.ranged !== null) return false;
       return true;
     });
-  }, [rows, storeSearch, brand, subChannel, ranged]);
+  }, [rows, storeSearch, brand, channel, subChannel, ranged]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -115,6 +124,12 @@ export default function PhantomStorePage() {
         <p className="text-sm text-[var(--color-text-muted)] mt-1">
           Product &amp; store items flagged as phantom stock (PnP){period ? ` · ${period}` : ""}
         </p>
+        {phantomDays !== null && (
+          <p className="text-xs text-[var(--color-text-muted)] mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700">
+            Showing items with no sales or stock movement over the last{" "}
+            <strong>{phantomDays} days</strong> · set in Control Centre &rarr; Phantom Stock Settings
+          </p>
+        )}
       </div>
 
       {/* Summary cards */}
@@ -144,6 +159,18 @@ export default function PhantomStorePage() {
           {brands.map((b) => (
             <option key={b} value={b}>
               {b}
+            </option>
+          ))}
+        </select>
+        <select
+          value={channel}
+          onChange={(e) => setChannel(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
+        >
+          <option value="all">All channels</option>
+          {channels.map((c) => (
+            <option key={c} value={c}>
+              {c}
             </option>
           ))}
         </select>

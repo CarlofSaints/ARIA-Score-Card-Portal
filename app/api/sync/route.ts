@@ -392,6 +392,8 @@ export async function POST(req: NextRequest) {
     if (phantomOk) syncMeta.phantomDetailCount = phantomRows.length;
     syncMeta.phantomOk = phantomOk;
     syncMeta.phantomError = phantomError;
+    // Record the lookback window actually used so the Phantom page can show it.
+    if (phantomOk) syncMeta.phantomDays = phantomDays;
     syncMeta.phantomBasis = hasRanging ? "ranged (range file)" : "legacy (stores×products)";
     syncMeta.rangedChannels = ranging.map((r) => r.channel);
     syncMeta.sqlClient = client;
