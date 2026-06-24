@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
   const results: Array<{ slug: string; ok: boolean; detail: string }> = [];
   for (const t of due) {
     try {
-      const r = await runSyncForTenant(t.slug);
+      const r = await runSyncForTenant(t.slug, "cron");
       results.push({
         slug: t.slug,
         ok: true,

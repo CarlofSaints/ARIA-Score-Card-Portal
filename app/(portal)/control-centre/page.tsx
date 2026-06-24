@@ -9,6 +9,8 @@ import type { KpiWeighting } from "@/lib/types";
 
 interface SyncMeta {
   lastSync?: string;
+  lastAutoSync?: string;
+  lastSyncSource?: "manual" | "cron";
   channelCount?: number;
   storeCount?: number;
   productCount?: number;
@@ -118,8 +120,10 @@ export default function ControlCentrePage() {
         setSyncMessage(
           `Synced: ${data.counts.channels} channels, ${data.counts.stores} stores, ${data.counts.products} products, ${data.counts.oosDetail} OOS, ${data.counts.phantomDetail} phantom`
         );
-        setSyncMeta({
+        setSyncMeta((prev) => ({
+          ...prev,
           lastSync: new Date().toISOString(),
+          lastSyncSource: "manual",
           channelCount: data.counts.channels,
           storeCount: data.counts.stores,
           productCount: data.counts.products,
@@ -129,7 +133,7 @@ export default function ControlCentrePage() {
           salesProductCount: data.counts.salesProducts,
           oosDetailCount: data.counts.oosDetail,
           phantomDetailCount: data.counts.phantomDetail,
-        });
+        }));
       } else {
         setSyncMessage(data.error || "Sync failed");
       }
@@ -409,6 +413,19 @@ export default function ControlCentrePage() {
                 <p className="text-xs text-[var(--color-text-muted)]">Last Sync</p>
                 <p className="text-sm font-medium text-[var(--color-text)]">
                   {new Date(syncMeta.lastSync as string).toLocaleString()}
+                </p>
+                {syncMeta.lastSyncSource && (
+                  <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                    {syncMeta.lastSyncSource === "cron" ? "Scheduled" : "Manual"}
+                  </p>
+                )}
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/10">
+                <p className="text-xs text-[var(--color-text-muted)]">Last Auto-Sync</p>
+                <p className="text-sm font-medium text-[var(--color-text)]">
+                  {syncMeta.lastAutoSync
+                    ? new Date(syncMeta.lastAutoSync).toLocaleString()
+                    : "Never"}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/10">

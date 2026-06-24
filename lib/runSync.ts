@@ -44,8 +44,15 @@ export interface SyncResult {
  * outside a user session (e.g. from cron).
  *
  * Throws if the tenant has no SQL client mapped (caller decides how to surface).
+ *
+ * `source` records what triggered the run; cron runs additionally stamp a
+ * `lastAutoSync` timestamp so the Control Centre can show when the schedule
+ * last fired (distinct from a manual Sync Now).
  */
-export async function runSyncForTenant(slug: string): Promise<SyncResult> {
+export async function runSyncForTenant(
+  slug: string,
+  source: "manual" | "cron" = "manual"
+): Promise<SyncResult> {
   const config = await getTenantConfig(slug);
   if (!config?.sqlClientName) {
     throw new Error(
@@ -356,6 +363,8 @@ export async function runSyncForTenant(slug: string): Promise<SyncResult> {
   // Save sync metadata
   const syncMeta = await readJson<Record<string, unknown>>(`${slug}/data/sync-meta.json`, {});
   syncMeta.lastSync = now.toISOString();
+  syncMeta.lastSyncSource = source;
+  if (source === "cron") syncMeta.lastAutoSync = now.toISOString();
   syncMeta.lastPeriod = period;
   syncMeta.channelCount = channels.length;
   syncMeta.storeCount = stores.length;
