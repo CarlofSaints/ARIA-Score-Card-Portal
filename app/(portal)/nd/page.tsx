@@ -7,7 +7,7 @@ import PermissionGate from "@/components/PermissionGate";
 import type { NdDetailRow } from "@/lib/types";
 
 type Level = "all" | "channel" | "store" | "product";
-type SortKey = "name" | "channelName" | "ndPercent" | "rangedCount" | "totalCount";
+type SortKey = "name" | "channelName" | "brand" | "ndPercent" | "rangedCount" | "totalCount";
 
 export default function NdPage() {
   const { user, loading } = useAuth();
@@ -20,6 +20,7 @@ export default function NdPage() {
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState<Level>("all");
   const [channel, setChannel] = useState("all");
+  const [brand, setBrand] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("ndPercent");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -44,6 +45,11 @@ export default function NdPage() {
     [rows]
   );
 
+  const brands = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.brand).filter(Boolean))).sort(),
+    [rows]
+  );
+
   function entityName(r: NdDetailRow): string {
     if (r.level === "product") return r.productName || r.productId;
     if (r.level === "store") return r.storeName || r.siteCode;
@@ -55,16 +61,18 @@ export default function NdPage() {
     return rows.filter((r) => {
       if (level !== "all" && r.level !== level) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
+      if (brand !== "all" && r.brand !== brand) return false;
       if (q && !entityName(r).toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, search, level, channel]);
+  }, [rows, search, level, channel, brand]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
     const dir = sortDir === "asc" ? 1 : -1;
     arr.sort((a, b) => {
       if (sortKey === "name") return entityName(a).localeCompare(entityName(b)) * dir;
+      if (sortKey === "brand") return String(a.brand ?? "").localeCompare(String(b.brand ?? "")) * dir;
       const av = a[sortKey];
       const bv = b[sortKey];
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
@@ -118,6 +126,10 @@ export default function NdPage() {
           <option value="all">All channels</option>
           {channels.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        <select value={brand} onChange={(e) => setBrand(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+          <option value="all">All brands</option>
+          {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
       </div>
 
       {fetching ? (
@@ -138,6 +150,7 @@ export default function NdPage() {
                   <Th label="Entity" k="name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <th className="px-3 py-2 font-semibold">Level</th>
                   <Th label="Channel" k="channelName" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                  <Th label="Brand" k="brand" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <Th label="Ranged" k="rangedCount" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
                   <Th label="Total" k="totalCount" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
                   <Th label="ND %" k="ndPercent" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
@@ -149,6 +162,7 @@ export default function NdPage() {
                     <td className="px-3 py-2 font-medium text-[var(--color-text)]">{entityName(r)}</td>
                     <td className="px-3 py-2 text-[var(--color-text-muted)] capitalize">{r.level}</td>
                     <td className="px-3 py-2 text-[var(--color-text)]">{r.channelName || "—"}</td>
+                    <td className="px-3 py-2 text-[var(--color-text)]">{r.brand || "—"}</td>
                     <td className="px-3 py-2 text-right text-[var(--color-text)]">{r.rangedCount?.toLocaleString() ?? "—"}</td>
                     <td className="px-3 py-2 text-right text-[var(--color-text)]">{r.totalCount?.toLocaleString() ?? "—"}</td>
                     <td className="px-3 py-2 text-right font-medium text-[var(--color-text)]">{r.ndPercent != null ? `${r.ndPercent}%` : "—"}</td>

@@ -229,9 +229,58 @@ export interface SqlPhantomStockPnpRow {
   "Channel Product Status": string | null;
   "Site Article Status": string | null;
   "Ranging Status": string | null;
+  "Product Brand"?: string | null;
+  Brand?: string | null;
   LatestSOH: number;
 }
 
 export async function getPhantomStockPnp(client: string, phantomDays = 60) {
   return sqlQuery<SqlPhantomStockPnpRow>("phantom_stock_pnp", { client, phantomDays });
+}
+
+// ── PnP-specific OOS / ND stored procedures (run on the phantom server) ──────
+// Both SPs return per site-SKU master rows (code fields). The sync enriches
+// names/brand/province from the store & product master, and ND% is computed in
+// the sync against the uploaded ranging file (mirrors the phantom aggregation).
+// Brand may also come back on the SP row ("Product Brand"/"Brand"); when present
+// it is preferred over the master lookup.
+
+export interface SqlOosPnpRow {
+  SiteCode: string;
+  SiteName: string;
+  Channel: string;
+  SubChannel: string | null;
+  Province: string | null;
+  ChannelArticle: string;
+  "Product ID": string;
+  "Product Description": string;
+  "Product Status": string | null;
+  "Channel Product Status": string | null;
+  "Site Article Status": string | null;
+  "Product Brand"?: string | null;
+  Brand?: string | null;
+}
+
+export interface SqlNdPnpRow {
+  SiteCode: string;
+  SiteName: string;
+  Channel: string;
+  SubChannel: string | null;
+  Province: string | null;
+  ChannelArticle: string;
+  "Product ID": string;
+  "Product Description": string;
+  "Product Status": string | null;
+  "Channel Product Status": string | null;
+  "Site Article Status": string | null;
+  "Product Brand"?: string | null;
+  Brand?: string | null;
+}
+
+export async function getOosPnp(client: string) {
+  return sqlQuery<SqlOosPnpRow>("oos_pnp", { client });
+}
+
+export async function getNdPnp(client: string, scanRange = 60) {
+  return sqlQuery<SqlNdPnpRow>("nd_pnp", { client, scanRange });
 }

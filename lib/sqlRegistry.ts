@@ -211,6 +211,23 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     sql: "SELECT r.ProductID, p.[Product Description], p.[Product Brand],\n  COUNT(DISTINCT CASE WHEN r.RangeIndicator='TRUE' THEN r.SiteCode END) AS rangedStores,\n  COUNT(DISTINCT r.SiteCode) AS totalStores,\n  CASE WHEN COUNT(DISTINCT r.SiteCode)=0 THEN 0\n       ELSE CAST(COUNT(DISTINCT CASE WHEN r.RangeIndicator='TRUE' THEN r.SiteCode END) AS FLOAT)/COUNT(DISTINCT r.SiteCode)*100 END AS ndPercent\nFROM tblRangingData r\nINNER JOIN tblProducts p ON p.[Client Product ID]=r.ProductID AND p.Client=r.Client\nWHERE r.Client=@client\nGROUP BY r.ProductID, p.[Product Description], p.[Product Brand]",
     usedBy: "Sync → nd/<period>/detail.json; ND page, Product scorecard",
   },
+  {
+    name: "nd_pnp",
+    label: "Numerical Distribution — PnP (Stored Procedure)",
+    category: "Numerical Distribution",
+    kind: "stored_procedure",
+    status: "live",
+    purpose:
+      "PnP numerical distribution: per site-SKU rows the SP considers distributed within the scan window. Returns code/master fields (SiteCode, Channel, Product ID, Brand …); the sync computes ND% (distributed / ranged) by channel/store/product against the uploaded ranging file. Runs on the secondary (phantom) server.",
+    server: POOL2,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "scanRange", description: "Rolling window in days — Control Centre → Numerical Distribution Settings (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetNumericalDistribution_PNP] @ClientName = @client, @ScanRange = @scanRange",
+    usedBy: "Sync → nd/<period>/detail.json + kpi/<period>/nd-*.json; ND page, scorecards",
+  },
 
   // ── Out of Stocks ──────────────────────────────────────────────────
   {
@@ -226,6 +243,20 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
     sql: "WITH LatestSOH AS (\n  SELECT f.SiteID, f.SiteCode, f.ChannelArticleID, f.ArticleSiteStatusCode, f.SOH, f.[Date] AS LatestDate,\n    ROW_NUMBER() OVER (PARTITION BY f.SiteID, f.ChannelArticleID ORDER BY f.[Date] DESC) AS rn\n  FROM tblFactData f\n  WHERE f.ClientID=(SELECT TOP 1 ClientID FROM tblClients WHERE Client=@client) AND f.IsDeleted=0)\nSELECT l.SiteID, l.SiteCode, s.SiteName, s.Channel, s.SubChannel,\n  p.ID AS ProductID, p.[Client Product ID] AS SKU, p.[Product Description], p.[Product Brand], l.SOH, l.LatestDate\nFROM LatestSOH l\nINNER JOIN tblSites s ON s.SiteCode=l.SiteCode\nINNER JOIN tblProductLinks pl ON pl.ChannelArticleID=l.ChannelArticleID AND pl.Client=@client\nINNER JOIN tblProducts p ON p.[Client Product ID]=pl.[Product ID] AND p.Client=@client\nWHERE l.rn=1 AND l.SOH<=1 AND l.ArticleSiteStatusCode='A' AND p.[Product Status]='ACTIVE'",
     usedBy: "Sync → oos/<period>/detail.json; OOS page, scorecards",
+  },
+  {
+    name: "oos_pnp",
+    label: "Out of Stock — PnP (Stored Procedure)",
+    category: "Out of Stocks",
+    kind: "stored_procedure",
+    status: "live",
+    purpose:
+      "PnP out-of-stock list: per site-SKU rows the SP flags as out of stock. Returns code/master fields (SiteCode, Channel, Product ID, Brand …); the sync enriches names/brand from the master. Runs on the secondary (phantom) server.",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [GetOutOfStock_PNP] @client",
+    usedBy: "Sync → oos/<period>/detail.json + kpi/<period>/oos-*.json; OOS page, scorecards",
   },
 
   // ── Phantom Stock ──────────────────────────────────────────────────

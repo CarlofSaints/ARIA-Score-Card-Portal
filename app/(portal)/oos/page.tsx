@@ -6,14 +6,7 @@ import { useAuth, authFetch } from "@/lib/useAuth";
 import PermissionGate from "@/components/PermissionGate";
 import type { OosDetailRow } from "@/lib/types";
 
-type SortKey = "storeName" | "subChannel" | "brand" | "productName" | "soh" | "date";
-
-function formatDate(iso: string): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-}
+type SortKey = "storeName" | "subChannel" | "brand" | "productName";
 
 export default function OosPage() {
   const { user, loading } = useAuth();
@@ -26,7 +19,7 @@ export default function OosPage() {
   const [storeSearch, setStoreSearch] = useState("");
   const [brand, setBrand] = useState("all");
   const [channel, setChannel] = useState("all");
-  const [sortKey, setSortKey] = useState<SortKey>("soh");
+  const [sortKey, setSortKey] = useState<SortKey>("storeName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   useEffect(() => {
@@ -144,8 +137,6 @@ export default function OosPage() {
                   <Th label="Sub-Channel" k="subChannel" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <Th label="Product" k="productName" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                   <Th label="Brand" k="brand" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                  <Th label="SOH" k="soh" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
-                  <Th label="Latest Date" k="date" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                 </tr>
               </thead>
               <tbody>
@@ -158,8 +149,6 @@ export default function OosPage() {
                     <td className="px-3 py-2 text-[var(--color-text)]">{r.subChannel || "—"}</td>
                     <td className="px-3 py-2 text-[var(--color-text)]">{r.productName}</td>
                     <td className="px-3 py-2 text-[var(--color-text)]">{r.brand || "—"}</td>
-                    <td className={`px-3 py-2 text-right font-medium ${r.soh <= 0 ? "text-red-600" : "text-[var(--color-text)]"}`}>{r.soh}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-[var(--color-text)]">{formatDate(r.date)}</td>
                   </tr>
                 ))}
               </tbody>

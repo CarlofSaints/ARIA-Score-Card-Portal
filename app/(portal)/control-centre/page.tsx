@@ -20,6 +20,7 @@ interface SyncMeta {
   salesProductCount?: number;
   oosDetailCount?: number;
   phantomDetailCount?: number;
+  ndDetailCount?: number;
 }
 
 export default function ControlCentrePage() {
@@ -40,6 +41,11 @@ export default function ControlCentrePage() {
   const [phantomDays, setPhantomDays] = useState(60);
   const [phantomSaving, setPhantomSaving] = useState(false);
   const [phantomMessage, setPhantomMessage] = useState("");
+
+  // Numerical Distribution config (SP @ScanRange — rolling scan window)
+  const [ndDays, setNdDays] = useState(60);
+  const [ndSaving, setNdSaving] = useState(false);
+  const [ndMessage, setNdMessage] = useState("");
 
   // Auto-sync schedule (per-tenant, whole hours in SAST)
   const [syncTimes, setSyncTimes] = useState<string[]>([]);
@@ -69,6 +75,13 @@ export default function ControlCentrePage() {
         .then((r) => r.json())
         .then((data) => {
           if (data.phantomLookbackDays) setPhantomDays(data.phantomLookbackDays);
+        })
+        .catch(() => {});
+
+      authFetch("/api/tenant-config/nd")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.ndRollingDays) setNdDays(data.ndRollingDays);
         })
         .catch(() => {});
 
@@ -118,7 +131,7 @@ export default function ControlCentrePage() {
       const data = await res.json();
       if (res.ok) {
         setSyncMessage(
-          `Synced: ${data.counts.channels} channels, ${data.counts.stores} stores, ${data.counts.products} products, ${data.counts.oosDetail} OOS, ${data.counts.phantomDetail} phantom`
+          `Synced: ${data.counts.channels} channels, ${data.counts.stores} stores, ${data.counts.products} products, ${data.counts.oosDetail} OOS, ${data.counts.ndDetail} ND, ${data.counts.phantomDetail} phantom`
         );
         setSyncMeta((prev) => ({
           ...prev,
@@ -133,6 +146,7 @@ export default function ControlCentrePage() {
           salesProductCount: data.counts.salesProducts,
           oosDetailCount: data.counts.oosDetail,
           phantomDetailCount: data.counts.phantomDetail,
+          ndDetailCount: data.counts.ndDetail,
         }));
       } else {
         setSyncMessage(data.error || "Sync failed");
@@ -165,6 +179,30 @@ export default function ControlCentrePage() {
       setPhantomMessage("Network error");
     } finally {
       setPhantomSaving(false);
+    }
+  }
+
+  async function handleNdSave() {
+    setNdMessage("");
+    setNdSaving(true);
+    try {
+      const res = await authFetch("/api/tenant-config/nd", {
+        method: "PUT",
+        body: JSON.stringify({ ndRollingDays: ndDays }),
+      });
+      if (res.ok) {
+        // The scan window only changes the ND data once a sync re-runs the SP,
+        // so kick off a resync — fire-and-forget so the Save button releases
+        // immediately and the Data Sync section shows its own progress.
+        setNdMessage("Saved · re-syncing in the background…");
+        void runSync();
+      } else {
+        setNdMessage("Failed to save");
+      }
+    } catch {
+      setNdMessage("Network error");
+    } finally {
+      setNdSaving(false);
     }
   }
 
@@ -313,6 +351,52 @@ export default function ControlCentrePage() {
         <p className="text-xs text-[var(--color-text-muted)]">
           Products where SOH has not changed and no sales have been recorded in the last {phantomDays} days
           will be flagged as phantom stock. After changing this, run a sync to recalculate.
+        </p>
+      </section>
+
+      {/* Numerical Distribution Settings */}
+      <section className="bg-white rounded-xl border border-[var(--color-border)] p-6 mb-6">
+        <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">
+          Numerical Distribution Settings
+        </h2>
+        <p className="text-sm text-[var(--color-text-muted)] mb-4">
+          Numerical distribution measures how widely a product is actually present across ranged stores.
+          The rolling window sets how many days back the calculation looks for distribution (scans / stock
+          presence) when determining whether a product is distributed in a store.
+        </p>
+
+        <div className="flex items-end gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+              Numerical Distribution Rolling Days
+            </label>
+            <input
+              type="number"
+              min={7}
+              max={365}
+              value={ndDays}
+              onChange={(e) => setNdDays(Math.max(7, Math.min(365, Number(e.target.value) || 60)))}
+              className="w-32 rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm focus:border-[var(--color-primary)] focus:outline-none"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleNdSave}
+              disabled={ndSaving}
+              className="px-6 py-2.5 rounded-lg bg-[var(--color-primary)] text-sm font-medium text-white disabled:opacity-50"
+            >
+              {ndSaving ? "Saving..." : "Save"}
+            </button>
+            {ndMessage && (
+              <span className={`text-sm ${ndMessage.includes("Saved") ? "text-green-600" : "text-red-600"}`}>
+                {ndMessage}
+              </span>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Distribution is evaluated over the last {ndDays} days (passed to the SP as the scan range).
+          After changing this, run a sync to recalculate.
         </p>
       </section>
 

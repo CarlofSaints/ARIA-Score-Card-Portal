@@ -9,7 +9,8 @@ import {
   getYtdSalesByChannel,
   getYtdSalesByStore,
   getYtdSalesByProduct,
-  getOosDetail,
+  getOosPnp,
+  getNdPnp,
   getPhantomStockPnp,
 } from "@/lib/sqlProxy";
 import type {
@@ -18,6 +19,8 @@ import type {
   ScorecardProduct,
   SalesData,
   PhantomDetailRow,
+  OosDetailRow,
+  NdDetailRow,
 } from "@/lib/types";
 
 export interface SyncResult {
@@ -32,7 +35,8 @@ export interface SyncResult {
     salesChannels: number;
     salesStores: number;
     salesProducts: number;
-    oosDetail: number;
+    oosDetail: number | string;
+    ndDetail: number | string;
     phantomDetail: number | string;
   };
 }
@@ -62,6 +66,7 @@ export async function runSyncForTenant(
 
   const client = config.sqlClientName;
   const phantomDays = config.phantomLookbackDays ?? 60;
+  const ndRollingDays = config.ndRollingDays ?? 60;
   const now = new Date();
   const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
@@ -98,9 +103,13 @@ export async function runSyncForTenant(
     category: p["Product Category"] || undefined,
   }));
 
-  // ── Batch 2: Sales, OOS, Phantom, Brands ──
-  // Track whether the phantom SP actually succeeded — a failed call must NOT
-  // overwrite previously-synced phantom data with an empty set.
+  // ── Batch 2: Sales, OOS, ND, Phantom, Brands ──
+  // Track whether each PnP stored procedure actually succeeded — a failed call
+  // must NOT overwrite previously-synced data with an empty set.
+  let oosOk = true;
+  let oosError = "";
+  let ndOk = true;
+  let ndError = "";
   let phantomOk = true;
   let phantomError = "";
 
@@ -109,13 +118,23 @@ export async function runSyncForTenant(
     salesStoreRes,
     salesProductRes,
     oosRes,
+    ndRes,
     phantomRes,
     brandsRes,
   ] = await Promise.all([
     getYtdSalesByChannel(client).catch(() => ({ data: [], count: 0 })),
     getYtdSalesByStore(client).catch(() => ({ data: [], count: 0 })),
     getYtdSalesByProduct(client).catch(() => ({ data: [], count: 0 })),
-    getOosDetail(client).catch(() => ({ data: [], count: 0 })),
+    getOosPnp(client).catch((e) => {
+      oosOk = false;
+      oosError = e instanceof Error ? e.message : String(e);
+      return { data: [], count: 0 };
+    }),
+    getNdPnp(client, ndRollingDays).catch((e) => {
+      ndOk = false;
+      ndError = e instanceof Error ? e.message : String(e);
+      return { data: [], count: 0 };
+    }),
     getPhantomStockPnp(client, phantomDays).catch((e) => {
       phantomOk = false;
       phantomError = e instanceof Error ? e.message : String(e);
@@ -161,14 +180,25 @@ export async function runSyncForTenant(
     };
   });
 
-  // ── Aggregate OOS: count OOS items per entity, divide by total items ──
+  // ── Shared lookup maps (used by OOS, ND and Phantom aggregation) ──
+  const channelIdByName = new Map<string, string>(
+    channels.map((c) => [c.name, c.id] as [string, string])
+  );
+  const storeBySiteCode = new Map<string, ScorecardStore>(
+    stores
+      .filter((s) => s.siteCode)
+      .map((s) => [s.siteCode as string, s] as [string, ScorecardStore])
+  );
+  const productBySku = new Map<string, ScorecardProduct>(
+    products.map((p) => [p.sku, p] as [string, ScorecardProduct])
+  );
+
+  // ── Aggregate OOS (GetOutOfStock_PNP — PnP channel) ──
+  // The SP returns per site-SKU rows it flags as out of stock. SiteCode maps to
+  // a store (store.id === SiteCode) and "Product ID" to a product (product.id
+  // === sku). Brand prefers the SP column, falling back to the product master.
+  // % per entity = OOS items / total possible (stores × products).
   const oosRows = oosRes.data;
-  const channelStoreCounts: Record<string, Set<string>> = {};
-  for (const st of stores) {
-    const key = st.channelName;
-    if (!channelStoreCounts[key]) channelStoreCounts[key] = new Set();
-    channelStoreCounts[key].add(st.id);
-  }
   const oosCountByChannel: Record<string, number> = {};
   const oosTotalByChannel: Record<string, number> = {};
   const oosCountByStore: Record<string, number> = {};
@@ -176,18 +206,30 @@ export async function runSyncForTenant(
   const oosCountByProduct: Record<string, number> = {};
   const oosTotalByProduct: Record<string, number> = {};
 
-  for (const row of oosRows) {
-    const ch = channels.find((c) => c.name === row.Channel);
-    if (ch) {
-      oosCountByChannel[ch.id] = (oosCountByChannel[ch.id] || 0) + 1;
-    }
-    const storeId = String(row.SiteID);
-    oosCountByStore[storeId] = (oosCountByStore[storeId] || 0) + 1;
-    const prod = products.find((p) => p.sku === row.SKU);
-    if (prod) {
-      oosCountByProduct[prod.id] = (oosCountByProduct[prod.id] || 0) + 1;
-    }
-  }
+  const oosDetailRows: OosDetailRow[] = oosRows.map((row) => {
+    const store = storeBySiteCode.get(row.SiteCode);
+    const product = productBySku.get(row["Product ID"]);
+    const channelId = store
+      ? channelIdByName.get(store.channelName)
+      : channelIdByName.get(row.Channel);
+
+    if (channelId) oosCountByChannel[channelId] = (oosCountByChannel[channelId] || 0) + 1;
+    if (store) oosCountByStore[store.id] = (oosCountByStore[store.id] || 0) + 1;
+    if (product) oosCountByProduct[product.id] = (oosCountByProduct[product.id] || 0) + 1;
+
+    return {
+      siteCode: row.SiteCode,
+      storeName: store?.name || row.SiteName || row.SiteCode,
+      channelName: store?.channelName || row.Channel || "",
+      subChannel: String(row.SubChannel ?? ""),
+      province: store?.region || String(row.Province ?? ""),
+      productId: row["Product ID"],
+      productName: product?.name || row["Product Description"] || row["Product ID"],
+      brand: String(row["Product Brand"] ?? row.Brand ?? "") || product?.brand || "",
+      soh: 0,
+      date: "",
+    };
+  });
 
   for (const ch of channels) {
     const chStores = stores.filter((s) => s.channelName === ch.name);
@@ -230,19 +272,7 @@ export async function runSyncForTenant(
     return true;
   });
 
-  const channelIdByName = new Map<string, string>(
-    channels.map((c) => [c.name, c.id] as [string, string])
-  );
-  const storeBySiteCode = new Map<string, ScorecardStore>(
-    stores
-      .filter((s) => s.siteCode)
-      .map((s) => [s.siteCode as string, s] as [string, ScorecardStore])
-  );
-  const productBySku = new Map<string, ScorecardProduct>(
-    products.map((p) => [p.sku, p] as [string, ScorecardProduct])
-  );
-
-  // Load uploaded ranging — used ONLY for the phantom % denominator.
+  // Load uploaded ranging — the % denominator for both phantom and ND.
   const ranging = await loadAllRanging(slug);
   const rangedByStoreCode: Record<string, number> = {};
   const rangedByProductId: Record<string, number> = {};
@@ -284,7 +314,8 @@ export async function runSyncForTenant(
       province: store?.region || "",
       productId: row["Product ID"],
       productName: product?.name || row["Product ID"],
-      brand: product?.brand || "",
+      brand:
+        String(row["Product Brand"] ?? row.Brand ?? "") || product?.brand || "",
       channelArticle: row.ChannelArticle,
       siteArticleStatus: String(row["Site Article Status"] ?? ""),
       ranged,
@@ -330,6 +361,110 @@ export async function runSyncForTenant(
     }
   }
 
+  // ── Aggregate ND (GetNumericalDistribution_PNP — PnP channel) ──
+  // The SP returns per site-SKU rows it considers DISTRIBUTED within the scan
+  // window. ND% = distributed / ranged (range file) by channel/store/product —
+  // mirrors the phantom denominator logic (falls back to stores × products when
+  // no ranging file is loaded). One detail row per level for the ND page.
+  const seenNd = new Set<string>();
+  const dedupedNd = ndRes.data.filter((row) => {
+    const key = `${row.SiteCode}|${row["Product ID"]}`;
+    if (seenNd.has(key)) return false;
+    seenNd.add(key);
+    return true;
+  });
+
+  const ndCountByChannel: Record<string, number> = {};
+  const ndCountByStore: Record<string, number> = {};
+  const ndCountByProduct: Record<string, number> = {};
+  // Resolve brand per product id from the SP rows (preferred over the master).
+  const ndBrandByProduct: Record<string, string> = {};
+
+  for (const row of dedupedNd) {
+    const store = storeBySiteCode.get(row.SiteCode);
+    const product = productBySku.get(row["Product ID"]);
+    const channelId = store
+      ? channelIdByName.get(store.channelName)
+      : channelIdByName.get(row.Channel);
+
+    if (channelId) ndCountByChannel[channelId] = (ndCountByChannel[channelId] || 0) + 1;
+    if (store) ndCountByStore[store.id] = (ndCountByStore[store.id] || 0) + 1;
+    if (product) ndCountByProduct[product.id] = (ndCountByProduct[product.id] || 0) + 1;
+
+    const spBrand = String(row["Product Brand"] ?? row.Brand ?? "");
+    if (product && spBrand) ndBrandByProduct[product.id] = spBrand;
+  }
+
+  const ndByChannel: Record<string, number> = {};
+  const ndByStore: Record<string, number> = {};
+  const ndByProduct: Record<string, number> = {};
+  const ndDetailRows: NdDetailRow[] = [];
+
+  for (const ch of channels) {
+    const count = ndCountByChannel[ch.id] || 0;
+    const total = hasRanging
+      ? rangedTotalByChannelName[ch.name] || 0
+      : oosTotalByChannel[ch.id] || 0;
+    const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+    ndByChannel[ch.id] = pct;
+    ndDetailRows.push({
+      level: "channel",
+      channelName: ch.name,
+      siteCode: "",
+      storeName: "",
+      productId: "",
+      productName: "",
+      brand: "",
+      rangedCount: count,
+      totalCount: total,
+      ndPercent: pct,
+    });
+  }
+
+  for (const st of stores) {
+    const count = ndCountByStore[st.id] || 0;
+    const total = hasRanging
+      ? st.siteCode
+        ? rangedByStoreCode[st.siteCode] || 0
+        : 0
+      : oosTotalByStore[st.id] || 0;
+    const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+    ndByStore[st.id] = pct;
+    ndDetailRows.push({
+      level: "store",
+      channelName: st.channelName,
+      siteCode: st.siteCode || st.id,
+      storeName: st.name,
+      productId: "",
+      productName: "",
+      brand: "",
+      rangedCount: count,
+      totalCount: total,
+      ndPercent: pct,
+    });
+  }
+
+  for (const p of products) {
+    const count = ndCountByProduct[p.id] || 0;
+    const total = hasRanging
+      ? rangedByProductId[p.sku] || 0
+      : oosTotalByProduct[p.id] || 0;
+    const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+    ndByProduct[p.id] = pct;
+    ndDetailRows.push({
+      level: "product",
+      channelName: "",
+      siteCode: "",
+      storeName: "",
+      productId: p.sku,
+      productName: p.name,
+      brand: ndBrandByProduct[p.id] || p.brand || "",
+      rangedCount: count,
+      totalCount: total,
+      ndPercent: pct,
+    });
+  }
+
   // Extract brand list
   const brands: string[] = brandsRes.data.map((b) => b.Brand);
 
@@ -341,12 +476,28 @@ export async function runSyncForTenant(
     writeJson(`${slug}/data/sales/${period}/channels.json`, salesChannels),
     writeJson(`${slug}/data/sales/${period}/stores.json`, salesStores),
     writeJson(`${slug}/data/sales/${period}/products.json`, salesProducts),
-    writeJson(`${slug}/data/kpi/${period}/oos-channel.json`, oosByChannel),
-    writeJson(`${slug}/data/kpi/${period}/oos-store.json`, oosByStore),
-    writeJson(`${slug}/data/kpi/${period}/oos-product.json`, oosByProduct),
     writeJson(`${slug}/data/brands.json`, brands),
-    writeJson(`${slug}/data/oos/${period}/detail.json`, oosRows),
   ];
+
+  // Only overwrite OOS data when the SP succeeded.
+  if (oosOk) {
+    writes.push(
+      writeJson(`${slug}/data/kpi/${period}/oos-channel.json`, oosByChannel),
+      writeJson(`${slug}/data/kpi/${period}/oos-store.json`, oosByStore),
+      writeJson(`${slug}/data/kpi/${period}/oos-product.json`, oosByProduct),
+      writeJson(`${slug}/data/oos/${period}/detail.json`, oosDetailRows)
+    );
+  }
+
+  // Only overwrite ND data when the SP succeeded.
+  if (ndOk) {
+    writes.push(
+      writeJson(`${slug}/data/kpi/${period}/nd-channel.json`, ndByChannel),
+      writeJson(`${slug}/data/kpi/${period}/nd-store.json`, ndByStore),
+      writeJson(`${slug}/data/kpi/${period}/nd-product.json`, ndByProduct),
+      writeJson(`${slug}/data/nd/${period}/detail.json`, ndDetailRows)
+    );
+  }
 
   // Only overwrite phantom data when the SP succeeded.
   if (phantomOk) {
@@ -373,7 +524,14 @@ export async function runSyncForTenant(
   syncMeta.salesChannelCount = salesChannels.length;
   syncMeta.salesStoreCount = salesStores.length;
   syncMeta.salesProductCount = salesProducts.length;
-  syncMeta.oosDetailCount = oosRows.length;
+  if (oosOk) syncMeta.oosDetailCount = oosDetailRows.length;
+  syncMeta.oosOk = oosOk;
+  syncMeta.oosError = oosError;
+  if (ndOk) syncMeta.ndDetailCount = ndDetailRows.length;
+  syncMeta.ndOk = ndOk;
+  syncMeta.ndError = ndError;
+  // Record the scan window actually used so the ND page can show it.
+  if (ndOk) syncMeta.ndRollingDays = ndRollingDays;
   if (phantomOk) syncMeta.phantomDetailCount = phantomRows.length;
   syncMeta.phantomOk = phantomOk;
   syncMeta.phantomError = phantomError;
@@ -396,7 +554,8 @@ export async function runSyncForTenant(
       salesChannels: salesChannels.length,
       salesStores: salesStores.length,
       salesProducts: salesProducts.length,
-      oosDetail: oosRows.length,
+      oosDetail: oosOk ? oosDetailRows.length : "(unchanged — SP failed)",
+      ndDetail: ndOk ? ndDetailRows.length : "(unchanged — SP failed)",
       phantomDetail: phantomOk ? phantomRows.length : "(unchanged — SP failed)",
     },
   };
