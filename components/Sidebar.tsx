@@ -5,8 +5,9 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useTenant } from "@/contexts/TenantContext";
 import { useAuth } from "@/lib/useAuth";
+import { usePermissions } from "@/contexts/PermissionsContext";
 import { MODULE_DEFS } from "@/lib/modules";
-import type { ModuleKey } from "@/lib/types";
+import type { ModuleKey, PermissionKey } from "@/lib/types";
 
 interface SidebarProps {
   open: boolean;
@@ -18,28 +19,44 @@ interface NavItem {
   route: string;
   icon: () => React.JSX.Element;
   moduleKey?: ModuleKey;
+  permission?: PermissionKey;
   adminOnly?: boolean;
+  superAdminOnly?: boolean;
 }
 
+// Each scorecard module also has a matching view permission.
+const MODULE_PERMISSION: Record<ModuleKey, PermissionKey> = {
+  cam_scorecard: "view_cam_scorecard",
+  channel_scorecard: "view_channel_scorecard",
+  store_scorecard: "view_store_scorecard",
+  product_scorecard: "view_product_scorecard",
+};
+
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", route: "/", icon: DashboardIcon },
+  { label: "Dashboard", route: "/", icon: DashboardIcon, permission: "view_dashboard" },
   ...MODULE_DEFS.map((m) => ({
     label: m.label,
     route: m.route,
     icon: getModuleIcon(m.key),
     moduleKey: m.key as ModuleKey,
+    permission: MODULE_PERMISSION[m.key as ModuleKey],
   })),
-  { label: "Phantom Stock", route: "/phantom-store", icon: PhantomIcon },
+  { label: "Phantom Stock", route: "/phantom-store", icon: PhantomIcon, permission: "view_phantom" },
+  { label: "Out of Stocks", route: "/oos", icon: OosIcon, permission: "view_oos" },
+  { label: "Numerical Distribution", route: "/nd", icon: NdIcon, permission: "view_nd" },
+  { label: "Sales", route: "/sales", icon: SalesIcon, permission: "view_sales" },
   { label: "Ranging", route: "/ranging", icon: RangingIcon, adminOnly: true },
   { label: "Control Centre", route: "/control-centre", icon: SettingsIcon, adminOnly: true },
   { label: "CAM Mapping", route: "/cam-mapping", icon: MappingIcon, adminOnly: true },
   { label: "Admin", route: "/admin", icon: AdminIcon, adminOnly: true },
+  { label: "SQL Reference", route: "/sql-reference", icon: DatabaseIcon, superAdminOnly: true },
 ];
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const tenant = useTenant();
   const { user, logout, hasRole } = useAuth();
+  const { can } = usePermissions();
 
   const enabledModules = tenant.enabledModules;
 
@@ -78,8 +95,12 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-3 px-3">
           {NAV_ITEMS.map((item) => {
+            // Super-admin-only items (e.g. SQL Reference)
+            if (item.superAdminOnly && !hasRole("super_admin")) return null;
             // Admin-only items
             if (item.adminOnly && !hasRole("admin")) return null;
+            // Permission-gated items — hidden when the role lacks the permission
+            if (item.permission && !can(item.permission)) return null;
 
             const isModule = "moduleKey" in item;
             const isEnabled =
@@ -208,6 +229,45 @@ function PhantomIcon() {
       <path d="M9 2a7 7 0 017 7v11l-2.5-1.5L11 20l-2.5-1.5L6 20V9a3 3 0 016 0" />
       <line x1="9" y1="9" x2="9" y2="9.01" />
       <line x1="13" y1="9" x2="13" y2="9.01" />
+    </svg>
+  );
+}
+
+function OosIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function NdIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
+
+function SalesIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </svg>
+  );
+}
+
+function DatabaseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
     </svg>
   );
 }

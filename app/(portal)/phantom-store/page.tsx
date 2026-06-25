@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
+import PermissionGate from "@/components/PermissionGate";
 import type { PhantomDetailRow } from "@/lib/types";
 
 type SortKey =
@@ -118,7 +119,7 @@ export default function PhantomStorePage() {
   if (loading || !user) return null;
 
   return (
-    <div>
+    <PermissionGate permission="view_phantom">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-[var(--color-dark)]">Phantom Stock</h1>
         <p className="text-sm text-[var(--color-text-muted)] mt-1">
@@ -263,7 +264,7 @@ export default function PhantomStorePage() {
           </div>
         </div>
       )}
-    </div>
+    </PermissionGate>
   );
 }
 

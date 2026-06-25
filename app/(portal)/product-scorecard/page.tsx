@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import ModuleGate from "@/components/ModuleGate";
+import PermissionGate from "@/components/PermissionGate";
 import ScoreTable from "@/components/ScoreTable";
 
 export default function ProductScorecardPage() {
@@ -17,16 +18,18 @@ export default function ProductScorecardPage() {
   if (loading || !user) return null;
 
   return (
-    <ModuleGate moduleKey="product_scorecard">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--color-dark)]">
-          Product Score Card
-        </h1>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Performance scores for products and SKUs
-        </p>
-      </div>
-      <ScoreTable type="product" title="Product" />
-    </ModuleGate>
+    <PermissionGate permission="view_product_scorecard">
+      <ModuleGate moduleKey="product_scorecard">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-[var(--color-dark)]">
+            Product Score Card
+          </h1>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">
+            Performance scores for products and SKUs
+          </p>
+        </div>
+        <ScoreTable type="product" title="Product" />
+      </ModuleGate>
+    </PermissionGate>
   );
 }

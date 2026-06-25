@@ -27,6 +27,10 @@ export type PermissionKey =
   | "view_store_scorecard"
   | "view_product_scorecard"
   | "view_dashboard"
+  | "view_phantom"
+  | "view_oos"
+  | "view_nd"
+  | "view_sales"
   | "export_data"
   | "manage_cam_mapping";
 
@@ -315,6 +319,55 @@ export interface PhantomDetailRow {
   soh: number;
   date: string; // snapshot date (ISO)
   dateLastSold: string | null; // from SP "Date Last Sold"; null if absent
+}
+
+// ── OOS / ND / Sales detail rows ──
+// Enriched rows for the OOS, Numerical Distribution and Sales detail pages.
+// Mirror the PhantomDetailRow pattern: the sync transforms raw SQL/SP rows
+// into these shapes and writes them to `${slug}/data/{oos|nd|sales}/${period}/detail.json`.
+// Until Mark's queries are wired the blobs are empty and the pages show an
+// empty-state — no other change is needed to "plug in" the data.
+
+export interface OosDetailRow {
+  siteCode: string;
+  storeName: string;
+  channelName: string;
+  subChannel: string; // CORP/HYPER/FRANCHISE/DC; "" if absent
+  province: string;
+  productId: string;
+  productName: string;
+  brand: string;
+  soh: number;
+  date: string; // latest snapshot date (ISO); "" if absent
+}
+
+export interface NdDetailRow {
+  level: "channel" | "store" | "product";
+  channelName: string;
+  siteCode: string; // "" for channel/product level
+  storeName: string; // "" for channel/product level
+  productId: string; // "" for channel/store level
+  productName: string; // "" for channel/store level
+  brand: string;
+  rangedCount: number; // numerator (ranged site-SKU combos present)
+  totalCount: number; // denominator (ranged site-SKU combos expected)
+  ndPercent: number; // rangedCount / totalCount * 100
+}
+
+export interface SalesDetailRow {
+  level: "channel" | "store" | "product";
+  entityId: string;
+  channelName: string;
+  siteCode: string; // "" for channel/product level
+  storeName: string; // "" for channel/product level
+  productId: string; // "" for channel/store level
+  productName: string; // "" for channel/store level
+  brand: string;
+  ytdValue: number;
+  ytdUnits: number;
+  splyValue: number; // same-period-last-year
+  splyUnits: number;
+  growthPercent: number; // (ytdValue - splyValue) / splyValue * 100
 }
 
 // ── Ranging (denominator source — uploaded Range Management workbook) ──

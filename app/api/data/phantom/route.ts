@@ -4,6 +4,8 @@ import { getTenantSlug } from "@/lib/getTenantSlug";
 import { readJson } from "@/lib/blob";
 import type { PhantomDetailRow } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   try {
     requireLogin(req);

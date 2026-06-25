@@ -92,6 +92,9 @@ export async function authFetch(
     headers["Content-Type"] = "application/json";
   }
   return fetch(url, {
+    // Never let the browser serve a cached GET — otherwise freshly-synced data
+    // only appears after a hard reload / re-login. Caller can override.
+    cache: "no-store",
     ...fetchOptions,
     credentials: "include",
     headers: {

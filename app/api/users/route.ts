@@ -7,9 +7,11 @@ import {
 import { getTenantSlug } from "@/lib/getTenantSlug";
 import {
   getUsers,
+  getUserById,
   createUser,
   updateUser,
   deleteUser,
+  setUserPassword,
 } from "@/lib/userData";
 
 export async function GET(req: NextRequest) {
@@ -60,13 +62,29 @@ export async function PUT(req: NextRequest) {
     await requirePermission(req, "manage_users");
     const slug = await getTenantSlug();
     const body = await req.json();
-    const { id, ...updates } = body;
+    const { id, password, ...updates } = body;
 
     if (!id) {
       return Response.json({ error: "id is required" }, { status: 400, headers: noCacheHeaders() });
     }
 
-    const user = await updateUser(slug, id, updates);
+    // A password change is handled separately so it gets hashed (updateUser
+    // only accepts profile fields). setUserPassword also clears forcePasswordChange,
+    // so re-apply the flag afterwards if the caller asked to force a change.
+    if (typeof password === "string" && password.length > 0) {
+      await setUserPassword(slug, id, password);
+    }
+
+    // Only call updateUser if there are profile fields to change (avoids a
+    // no-op write when the request was a pure password reset).
+    let user = await getUserById(slug, id);
+    if (Object.keys(updates).length > 0) {
+      user = await updateUser(slug, id, updates);
+    }
+    if (!user) {
+      return Response.json({ error: "User not found" }, { status: 404, headers: noCacheHeaders() });
+    }
+
     const { password: _, ...safe } = user;
     return Response.json({ user: safe }, { headers: noCacheHeaders() });
   } catch (err) {

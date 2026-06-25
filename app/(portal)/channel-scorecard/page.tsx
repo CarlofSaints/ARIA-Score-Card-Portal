@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import ModuleGate from "@/components/ModuleGate";
+import PermissionGate from "@/components/PermissionGate";
 import ScoreTable from "@/components/ScoreTable";
 
 export default function ChannelScorecardPage() {
@@ -17,16 +18,18 @@ export default function ChannelScorecardPage() {
   if (loading || !user) return null;
 
   return (
-    <ModuleGate moduleKey="channel_scorecard">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--color-dark)]">
-          Channel Score Card
-        </h1>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Performance scores for retail channels
-        </p>
-      </div>
-      <ScoreTable type="channel" title="Channel" />
-    </ModuleGate>
+    <PermissionGate permission="view_channel_scorecard">
+      <ModuleGate moduleKey="channel_scorecard">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-[var(--color-dark)]">
+            Channel Score Card
+          </h1>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">
+            Performance scores for retail channels
+          </p>
+        </div>
+        <ScoreTable type="channel" title="Channel" />
+      </ModuleGate>
+    </PermissionGate>
   );
 }

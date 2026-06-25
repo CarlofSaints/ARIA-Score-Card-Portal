@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import ModuleGate from "@/components/ModuleGate";
+import PermissionGate from "@/components/PermissionGate";
 import ScoreTable from "@/components/ScoreTable";
 
 export default function StoreScorecardPage() {
@@ -17,16 +18,18 @@ export default function StoreScorecardPage() {
   if (loading || !user) return null;
 
   return (
-    <ModuleGate moduleKey="store_scorecard">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--color-dark)]">
-          Store Score Card
-        </h1>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Performance scores for individual stores
-        </p>
-      </div>
-      <ScoreTable type="store" title="Store" />
-    </ModuleGate>
+    <PermissionGate permission="view_store_scorecard">
+      <ModuleGate moduleKey="store_scorecard">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-[var(--color-dark)]">
+            Store Score Card
+          </h1>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">
+            Performance scores for individual stores
+          </p>
+        </div>
+        <ScoreTable type="store" title="Store" />
+      </ModuleGate>
+    </PermissionGate>
   );
 }
