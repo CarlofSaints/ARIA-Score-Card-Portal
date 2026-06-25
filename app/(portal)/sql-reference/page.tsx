@@ -2,13 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/useAuth";
+import { useAuth, authFetch } from "@/lib/useAuth";
 import {
   SQL_REGISTRY,
   SQL_CATEGORIES,
   type SqlRegistryEntry,
   type SqlEntryStatus,
 } from "@/lib/sqlRegistry";
+
+interface DriftState {
+  loading: boolean;
+  ok: boolean;
+  error?: string;
+  undocumented: string[]; // on the proxy, missing from this registry
+  missingOnProxy: string[]; // in this registry, not registered on the proxy
+}
 
 const STATUS_STYLES: Record<SqlEntryStatus, string> = {
   live: "bg-green-100 text-green-700",
@@ -28,10 +36,37 @@ export default function SqlReferencePage() {
 
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState<string>("");
+  const [drift, setDrift] = useState<DriftState>({
+    loading: true,
+    ok: false,
+    undocumented: [],
+    missingOnProxy: [],
+  });
 
   useEffect(() => {
     if (!loading && (!user || !hasRole("super_admin"))) router.push("/");
   }, [loading, user, hasRole, router]);
+
+  // Compare the registry against the queries actually registered on the proxy.
+  useEffect(() => {
+    if (!user || !hasRole("super_admin")) return;
+    authFetch("/api/sql-reference/proxy-queries")
+      .then((r) => r.json())
+      .then((d: { names?: string[]; ok?: boolean; error?: string }) => {
+        const proxyNames = new Set(d.names || []);
+        const registryNames = new Set(SQL_REGISTRY.map((e) => e.name));
+        setDrift({
+          loading: false,
+          ok: !!d.ok,
+          error: d.error,
+          undocumented: [...proxyNames].filter((n) => !registryNames.has(n)).sort(),
+          missingOnProxy: [...registryNames].filter((n) => !proxyNames.has(n)).sort(),
+        });
+      })
+      .catch(() =>
+        setDrift({ loading: false, ok: false, error: "Could not reach the proxy", undocumented: [], missingOnProxy: [] })
+      );
+  }, [user, hasRole]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -61,6 +96,8 @@ export default function SqlReferencePage() {
           Super-admin only · reference/documentation (does not execute anything).
         </p>
       </div>
+
+      <DriftBanner drift={drift} />
 
       <div className="mb-5">
         <input
@@ -137,6 +174,51 @@ export default function SqlReferencePage() {
         <div className="text-center py-12 text-[var(--color-text-muted)]">
           No queries match “{search}”.
         </div>
+      )}
+    </div>
+  );
+}
+
+function DriftBanner({ drift }: { drift: DriftState }) {
+  if (drift.loading) {
+    return (
+      <div className="mb-5 px-4 py-2.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
+        Checking this page against the live proxy…
+      </div>
+    );
+  }
+
+  if (!drift.ok) {
+    return (
+      <div className="mb-5 px-4 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-600">
+        Couldn&apos;t verify against the proxy{drift.error ? ` (${drift.error})` : ""}. The catalogue below may be out of date.
+      </div>
+    );
+  }
+
+  const inSync = drift.undocumented.length === 0 && drift.missingOnProxy.length === 0;
+  if (inSync) {
+    return (
+      <div className="mb-5 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">
+        ✓ In sync with the proxy — every registered query is documented here.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-5 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+      <p className="font-semibold mb-1">⚠ This page is out of sync with the proxy.</p>
+      {drift.undocumented.length > 0 && (
+        <p className="mb-1">
+          On the proxy but <strong>not documented here</strong> (add to <code>lib/sqlRegistry.ts</code>):{" "}
+          {drift.undocumented.map((n) => <code key={n} className="mx-0.5 px-1 rounded bg-amber-100">{n}</code>)}
+        </p>
+      )}
+      {drift.missingOnProxy.length > 0 && (
+        <p>
+          Documented here but <strong>not registered on the proxy</strong> (removed/renamed/not deployed):{" "}
+          {drift.missingOnProxy.map((n) => <code key={n} className="mx-0.5 px-1 rounded bg-amber-100">{n}</code>)}
+        </p>
       )}
     </div>
   );

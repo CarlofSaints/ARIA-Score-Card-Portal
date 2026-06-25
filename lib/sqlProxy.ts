@@ -36,6 +36,27 @@ export async function sqlQuery<T = Record<string, unknown>>(
   return res.json() as Promise<ProxyResponse<T>>;
 }
 
+/**
+ * Lists the named queries currently registered on the proxy (GET /query).
+ * Used by the SQL Reference drift detector to flag when lib/sqlRegistry.ts is
+ * out of sync with what's actually deployed.
+ */
+export async function listProxyQueries(): Promise<string[]> {
+  if (!PROXY_URL || !PROXY_KEY) {
+    throw new Error("SQL_PROXY_URL or SQL_PROXY_API_KEY not configured");
+  }
+  const res = await fetch(`${PROXY_URL}/query`, {
+    headers: { "x-api-key": PROXY_KEY },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`SQL proxy error (${res.status}): ${body}`);
+  }
+  const json = (await res.json()) as { queries?: { name: string }[] };
+  return Array.isArray(json.queries) ? json.queries.map((q) => q.name) : [];
+}
+
 // ── Typed helpers for scorecard queries ──────────────────────────────────────
 
 export interface SqlClient {
