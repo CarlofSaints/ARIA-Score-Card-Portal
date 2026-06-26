@@ -106,7 +106,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
                     className="text-center px-3 py-3 font-medium text-[var(--color-text-muted)]"
                   >
                     {kpi.shortLabel}
-                    <div className="text-[10px] font-normal opacity-60">% · score</div>
+                    <div className="text-[10px] font-normal opacity-60">% · pts / max</div>
                   </th>
                 ))}
                 <th className="text-center px-4 py-3 font-medium text-[var(--color-text-muted)]">
@@ -139,7 +139,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
                             ks?.maxScore ?? 1
                           )} ${scoreColor(ks?.score ?? 0, ks?.maxScore ?? 1)}`}
                         >
-                          {ks?.score.toFixed(1) ?? "-"}
+                          {ks ? `${ks.score.toFixed(1)} / ${ks.maxScore}` : "-"}
                         </span>
                       </td>
                     );
@@ -151,7 +151,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
                         s.maxPossibleScore
                       )} ${scoreColor(s.totalScore, s.maxPossibleScore)}`}
                     >
-                      {s.totalScore.toFixed(1)}
+                      {s.totalScore.toFixed(1)} / {s.maxPossibleScore}
                     </span>
                   </td>
                 </tr>
