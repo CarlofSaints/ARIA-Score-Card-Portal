@@ -74,6 +74,8 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     return s.kpiScores.find((k) => k.kpiKey === key)?.score ?? 0;
   }
 
+  const withData = useMemo(() => scores.filter((s) => s.hasData !== false), [scores]);
+
   const sorted = useMemo(() => {
     const arr = [...scores];
     const dir = sortDir === "asc" ? 1 : -1;
@@ -113,13 +115,13 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
           </div>
           <div className="bg-white rounded-xl border border-[var(--color-border)] p-4 text-center">
             <p className="text-2xl font-bold text-green-600">
-              {scores.filter((s) => s.totalScore / s.maxPossibleScore >= 0.8).length}
+              {withData.filter((s) => s.totalScore / s.maxPossibleScore >= 0.8).length}
             </p>
             <p className="text-xs text-[var(--color-text-muted)]">Top Performers</p>
           </div>
           <div className="bg-white rounded-xl border border-[var(--color-border)] p-4 text-center">
             <p className="text-2xl font-bold text-amber-600">
-              {Math.round((scores.reduce((s, sc) => s + sc.totalScore, 0) / Math.max(1, scores.length)) * 10) / 10}
+              {Math.round((withData.reduce((s, sc) => s + sc.totalScore, 0) / Math.max(1, withData.length)) * 10) / 10}
             </p>
             <p className="text-xs text-[var(--color-text-muted)]">Avg Score</p>
           </div>
@@ -172,6 +174,13 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
                   <td className="px-4 py-3 font-medium text-[var(--color-text)] truncate">{s.entityName}</td>
                   {KPI_DEFS.map((kpi) => {
                     const ks = s.kpiScores.find((k) => k.kpiKey === kpi.key);
+                    if (s.hasData === false) {
+                      return (
+                        <td key={kpi.key} className="text-center px-3 py-3 text-[var(--color-text-muted)]">
+                          —
+                        </td>
+                      );
+                    }
                     return (
                       <td key={kpi.key} className="text-center px-3 py-3">
                         <div className="text-xs font-semibold text-[var(--color-text)]">
@@ -189,14 +198,18 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
                     );
                   })}
                   <td className="text-center px-4 py-3">
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${scoreBg(
-                        s.totalScore,
-                        s.maxPossibleScore
-                      )} ${scoreColor(s.totalScore, s.maxPossibleScore)}`}
-                    >
-                      {s.totalScore.toFixed(1)} / {s.maxPossibleScore}
-                    </span>
+                    {s.hasData === false ? (
+                      <span className="text-[var(--color-text-muted)] text-xs">no data</span>
+                    ) : (
+                      <span
+                        className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${scoreBg(
+                          s.totalScore,
+                          s.maxPossibleScore
+                        )} ${scoreColor(s.totalScore, s.maxPossibleScore)}`}
+                      >
+                        {s.totalScore.toFixed(1)} / {s.maxPossibleScore}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

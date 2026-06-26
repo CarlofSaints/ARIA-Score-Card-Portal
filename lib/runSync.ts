@@ -661,12 +661,41 @@ export async function runSyncForTenant(
   // Extract brand list
   const brands: string[] = brandsRes.data.map((b) => b.Brand);
 
+  // ── Coverage: which entities actually have source data ──
+  // The SPs are PnP-only, so non-PnP channels/stores/products appear in NO SP
+  // result. We record the entity ids that show up in ANY source (sales, OOS,
+  // ND, phantom) so the scorecards can show "no data" (—) for the rest instead
+  // of scoring them 0 (which would also dilute CAM averages).
+  const coveredChannels = new Set<string>();
+  const coveredStores = new Set<string>();
+  const coveredProducts = new Set<string>();
+  const markCoverage = (siteCode: string, productId: string, channelName: string) => {
+    const store = storeBySiteCode.get(siteCode);
+    const product = productBySku.get(productId);
+    const channelId = store
+      ? channelIdByName.get(store.channelName)
+      : channelIdByName.get(channelName);
+    if (channelId) coveredChannels.add(channelId);
+    if (store) coveredStores.add(store.id);
+    if (product) coveredProducts.add(product.id);
+  };
+  for (const r of salesRes.data) markCoverage(r.SiteCode, r["Product ID"], r.Channel);
+  for (const r of oosRows) markCoverage(r.SiteCode, r["Product ID"], r.Channel);
+  for (const r of dedupedNd) markCoverage(r.SiteCode, r["Product ID"], r.Channel);
+  for (const r of dedupedPhantom) markCoverage(r.SiteCode, r["Product ID"], r.Channel);
+  const coverage = {
+    channels: [...coveredChannels],
+    stores: [...coveredStores],
+    products: [...coveredProducts],
+  };
+
   // ── Write everything to blob ──
   const writes = [
     writeJson(`${slug}/data/channels.json`, channels),
     writeJson(`${slug}/data/stores.json`, stores),
     writeJson(`${slug}/data/products.json`, products),
     writeJson(`${slug}/data/brands.json`, brands),
+    writeJson(`${slug}/data/kpi/${period}/coverage.json`, coverage),
   ];
 
   // Only overwrite Sales data when the SP succeeded (a failed call must not wipe

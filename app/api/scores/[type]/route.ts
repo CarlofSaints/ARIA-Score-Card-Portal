@@ -51,11 +51,28 @@ export async function GET(
 
     // KPI percentage blobs are stored per level. CAM derives from channel data.
     const lvl = type === "cam" ? "channel" : type;
-    const [oosData, ndData, phantomData] = await Promise.all([
+    const [oosData, ndData, phantomData, coverage] = await Promise.all([
       readJson<Record<string, number>>(`${slug}/data/kpi/${period}/oos-${lvl}.json`, {}),
       readJson<Record<string, number>>(`${slug}/data/kpi/${period}/nd-${lvl}.json`, {}),
       readJson<Record<string, number>>(`${slug}/data/kpi/${period}/phantom-${lvl}.json`, {}),
+      readJson<{ channels: string[]; stores: string[]; products: string[] }>(
+        `${slug}/data/kpi/${period}/coverage.json`,
+        { channels: [], stores: [], products: [] }
+      ),
     ]);
+
+    // Which entity ids have source data. CAM gates on channel coverage. An empty
+    // coverage list (pre-coverage sync) means "treat everything as covered" so
+    // behaviour is unchanged until the next sync writes coverage.
+    const coverList =
+      type === "product"
+        ? coverage.products
+        : type === "store"
+        ? coverage.stores
+        : coverage.channels;
+    const coveredSet = new Set(coverList);
+    const coverageKnown = coveredSet.size > 0;
+    const isCovered = (id: string) => !coverageKnown || coveredSet.has(id);
 
     const at = (rec: Record<string, number>, id: string): number | null =>
       id in rec ? rec[id] : null;
@@ -77,13 +94,16 @@ export async function GET(
       scores = entities.map((e) => {
         const id = e.id;
         const name = "name" in e ? e.name : id;
-        const percents: Record<KpiKey, number | null> = {
-          sales_growth: salesGrowthPercent(salesById.get(id), metric),
-          numerical_distribution: at(ndData, id),
-          phantom_inventory: at(phantomData, id),
-          oos: at(oosData, id),
-        };
-        return buildEntityScore({
+        const covered = isCovered(id);
+        const percents: Record<KpiKey, number | null> = covered
+          ? {
+              sales_growth: salesGrowthPercent(salesById.get(id), metric),
+              numerical_distribution: at(ndData, id),
+              phantom_inventory: at(phantomData, id),
+              oos: at(oosData, id),
+            }
+          : { sales_growth: null, numerical_distribution: null, phantom_inventory: null, oos: null };
+        const score = buildEntityScore({
           entityId: id,
           entityName: name,
           entityType: type,
@@ -92,6 +112,8 @@ export async function GET(
           weightings,
           scoring,
         });
+        score.hasData = covered;
+        return score;
       });
     } else {
       // CAM = average of the assigned channels' metrics.
@@ -108,16 +130,19 @@ export async function GET(
       };
 
       scores = mappings.map((m) => {
-        const ch = m.channelIds;
-        const percents: Record<KpiKey, number | null> = {
-          sales_growth: avg(
-            ch.map((id) => salesGrowthPercent(salesById.get(id), metric))
-          ),
-          numerical_distribution: avg(ch.map((id) => at(ndData, id))),
-          phantom_inventory: avg(ch.map((id) => at(phantomData, id))),
-          oos: avg(ch.map((id) => at(oosData, id))),
-        };
-        return buildEntityScore({
+        // Only average over channels that actually have data — empty channels
+        // must not dilute the CAM (this is why a PnP CAM read 0.0% vs PNP 0.1%).
+        const ch = m.channelIds.filter((id) => isCovered(id));
+        const covered = ch.length > 0;
+        const percents: Record<KpiKey, number | null> = covered
+          ? {
+              sales_growth: avg(ch.map((id) => salesGrowthPercent(salesById.get(id), metric))),
+              numerical_distribution: avg(ch.map((id) => at(ndData, id))),
+              phantom_inventory: avg(ch.map((id) => at(phantomData, id))),
+              oos: avg(ch.map((id) => at(oosData, id))),
+            }
+          : { sales_growth: null, numerical_distribution: null, phantom_inventory: null, oos: null };
+        const score = buildEntityScore({
           entityId: m.id,
           entityName: m.camName,
           entityType: "cam",
@@ -126,6 +151,8 @@ export async function GET(
           weightings,
           scoring,
         });
+        score.hasData = covered;
+        return score;
       });
     }
 

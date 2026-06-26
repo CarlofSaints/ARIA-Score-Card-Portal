@@ -245,6 +245,7 @@ export interface EntityScore {
   totalScore: number;
   maxPossibleScore: number;
   rank?: number;
+  hasData?: boolean; // false = entity has no source data yet (show "—", not 0)
 }
 
 // ── Sales / Targets ──
