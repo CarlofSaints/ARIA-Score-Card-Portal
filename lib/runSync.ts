@@ -173,6 +173,8 @@ export async function runSyncForTenant(
     mtdUnits: number;
     pyMtdValue: number;
     pyMtdUnits: number;
+    lmValue: number;
+    lmUnits: number;
   }
   const emptyAgg = (): SalesAgg => ({
     ytdValue: 0,
@@ -183,6 +185,8 @@ export async function runSyncForTenant(
     mtdUnits: 0,
     pyMtdValue: 0,
     pyMtdUnits: 0,
+    lmValue: 0,
+    lmUnits: 0,
   });
   const addRow = (a: SalesAgg, r: (typeof salesRes.data)[number]) => {
     a.ytdValue += num(r["YTD Value"]);
@@ -193,6 +197,8 @@ export async function runSyncForTenant(
     a.mtdUnits += num(r["MTD Units"]);
     a.pyMtdValue += num(r["PY MTD Value"]);
     a.pyMtdUnits += num(r["PY MTD Units"]);
+    a.lmValue += num(r["PMTD Value"]);
+    a.lmUnits += num(r["PMTD Units"]);
   };
 
   const salesByChannelId = new Map<string, SalesAgg>();
@@ -246,6 +252,8 @@ export async function runSyncForTenant(
       mtdUnits: a.mtdUnits,
       pyMtdValue: a.pyMtdValue,
       pyMtdUnits: a.pyMtdUnits,
+      lastMonthValue: a.lmValue,
+      lastMonthUnits: a.lmUnits,
     };
   });
 
@@ -263,6 +271,8 @@ export async function runSyncForTenant(
       mtdUnits: a.mtdUnits,
       pyMtdValue: a.pyMtdValue,
       pyMtdUnits: a.pyMtdUnits,
+      lastMonthValue: a.lmValue,
+      lastMonthUnits: a.lmUnits,
     };
   });
 
@@ -280,6 +290,8 @@ export async function runSyncForTenant(
       mtdUnits: a.mtdUnits,
       pyMtdValue: a.pyMtdValue,
       pyMtdUnits: a.pyMtdUnits,
+      lastMonthValue: a.lmValue,
+      lastMonthUnits: a.lmUnits,
     };
   });
 

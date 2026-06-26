@@ -321,6 +321,9 @@ export interface SqlSalesPnpRow {
   "PY YTD Value": number | string;
   "MTD Units": number | string;
   "MTD Value": number | string;
+  // PMTD = Previous Month To Date (last calendar month) — the LM comparator.
+  "PMTD Units": number | string;
+  "PMTD Value": number | string;
   "PY MTD Units": number | string;
   "PY MTD Value": number | string;
 }

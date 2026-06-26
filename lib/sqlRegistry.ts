@@ -181,7 +181,7 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     server: POOL2,
     database: DB,
     params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
-    sql: "EXEC [GetDataForCustomDev_PNP_Sales] @ClientName = @client\n-- returns: MaxDate, YTDStartDate, MTDStartDate, SiteCode, SiteName, Channel, SubChannel,\n-- Province, ChannelArticle, [Product ID], [Product Description], [Product Brand], [Product Status],\n-- [Channel Product Status], [Ranging Status], [YTD Units], [YTD Value], [PY YTD Units], [PY YTD Value],\n-- [MTD Units], [MTD Value], [PY MTD Units], [PY MTD Value]  (no last-month yet)",
+    sql: "EXEC [GetDataForCustomDev_PNP_Sales] @ClientName = @client\n-- returns: MaxDate, YTDStartDate, MTDStartDate, SiteCode, SiteName, Channel, SubChannel,\n-- Province, ChannelArticle, [Product ID], [Product Description], [Product Brand], [Product Status],\n-- [Channel Product Status], [Ranging Status], [YTD Units], [YTD Value], [PY YTD Units], [PY YTD Value],\n-- [MTD Units], [MTD Value], [PMTD Units], [PMTD Value] (PMTD = last month / LM), [PY MTD Units], [PY MTD Value]",
     usedBy:
       "Sync → sales/<period>/{channels,stores,products,detail}.json; Sales page, scorecards",
   },

@@ -16,7 +16,7 @@ import type {
 const GROWTH_METRICS: { value: SalesGrowthMetric; label: string; disabled?: boolean }[] = [
   { value: "ytd_vs_ytd", label: "YTD vs YTD (year-to-date vs last year)" },
   { value: "tm_vs_tmly", label: "TM vs TMLY (this month vs same month last year)" },
-  { value: "tm_vs_lm", label: "TM vs LM (this month vs last month) — pending data", disabled: true },
+  { value: "tm_vs_lm", label: "TM vs LM (this month vs last month)" },
 ];
 
 interface SyncMeta {
