@@ -15,8 +15,8 @@ const COLS: { key: SortKey; label: string; width: number; align?: "right" | "cen
   { key: "channelName", label: "Channel", width: 120 },
   { key: "subChannel", label: "Sub-Channel", width: 140 },
   { key: "brand", label: "Brand", width: 150 },
-  { key: "rangedCount", label: "Ranged", width: 100, align: "right" },
-  { key: "totalCount", label: "Total", width: 100, align: "right" },
+  { key: "rangedCount", label: "Distributed", width: 110, align: "right" },
+  { key: "totalCount", label: "Ranged", width: 100, align: "right" },
   { key: "ndPercent", label: "ND %", width: 90, align: "right" },
 ];
 

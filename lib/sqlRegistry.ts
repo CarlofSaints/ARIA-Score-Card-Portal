@@ -181,7 +181,7 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     server: POOL2,
     database: DB,
     params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
-    sql: "EXEC [GetSales_PNP] @ClientName = @client\n-- returns: MaxDate, YTDStartDate, MTDStartDate, SiteCode, SiteName, Channel, SubChannel,\n-- Province, ChannelArticle, [Product ID], [Product Description], [Product Brand], [Product Status],\n-- [Channel Product Status], [Ranging Status], [YTD Units], [YTD Value], [PY YTD Units], [PY YTD Value],\n-- [MTD Units], [MTD Value], [PY MTD Units], [PY MTD Value]",
+    sql: "EXEC [GetDataForCustomDev_PNP_Sales] @ClientName = @client\n-- returns: MaxDate, YTDStartDate, MTDStartDate, SiteCode, SiteName, Channel, SubChannel,\n-- Province, ChannelArticle, [Product ID], [Product Description], [Product Brand], [Product Status],\n-- [Channel Product Status], [Ranging Status], [YTD Units], [YTD Value], [PY YTD Units], [PY YTD Value],\n-- [MTD Units], [MTD Value], [PY MTD Units], [PY MTD Value]  (no last-month yet)",
     usedBy:
       "Sync → sales/<period>/{channels,stores,products,detail}.json; Sales page, scorecards",
   },
@@ -240,7 +240,7 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
       { name: "client", description: "Client name, e.g. HENKEL" },
       { name: "scanRange", description: "Rolling window in days — Control Centre → Numerical Distribution Settings (default 60)" },
     ],
-    sql: "EXEC [dbo].[GetNumericalDistribution_PNP] @ClientName = @client, @ScanRange = @scanRange",
+    sql: "EXEC [dbo].[GetDataForCustomDev_PNP_NumericalDistribution] @ClientName = @client, @ScanRange = @scanRange\n-- returns ALL ranged site-SKUs with a [Numerical Distributed] flag (1/0) + SOH, UnitSales.\n-- ND% = distributed / ranged, computed per entity in the sync (self-contained, no range file).",
     usedBy: "Sync → nd/<period>/detail.json + kpi/<period>/nd-*.json; ND page, scorecards",
   },
 
@@ -270,7 +270,7 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     server: POOL2,
     database: DB,
     params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
-    sql: "EXEC [GetOutOfStock_PNP] @client",
+    sql: "EXEC [GetDataForCustomDev_PNP_OutOfStock] @client\n-- returns OOS site-SKUs incl. Date, [Site Article Status], LatestSOH (currently unused by the OOS page).",
     usedBy: "Sync → oos/<period>/detail.json + kpi/<period>/oos-*.json; OOS page, scorecards",
   },
 
@@ -289,7 +289,7 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
       { name: "client", description: "Client name, e.g. HENKEL" },
       { name: "phantomDays", description: "Lookback window in days (Control Centre → Phantom Settings; default 60)" },
     ],
-    sql: "EXEC [dbo].[GetPhantomStock_PNP] @ClientName = @client, @PhantomDays = @phantomDays",
+    sql: "EXEC [dbo].[GetDataForCustomDev_PNP_PhantomStock] @ClientName = @client, @PhantomDays = @phantomDays",
     usedBy: "Sync → phantom/<period>/detail.json; Phantom Stock page",
   },
   {

@@ -261,6 +261,10 @@ export interface SqlOosPnpRow {
   Brand?: string | null;
 }
 
+// GetDataForCustomDev_PNP_NumericalDistribution returns ALL ranged site-SKUs
+// (Ranging Status = TRUE) with a "Numerical Distributed" flag (1 = distributed,
+// 0 = not). ND% = distributed / ranged is computed per entity from these rows —
+// the SP is self-contained (no range file needed for ND).
 export interface SqlNdPnpRow {
   SiteCode: string;
   SiteName: string;
@@ -272,7 +276,11 @@ export interface SqlNdPnpRow {
   "Product Description": string;
   "Product Status": string | null;
   "Channel Product Status": string | null;
-  "Site Article Status": string | null;
+  "Site Article Status"?: string | null;
+  "Ranging Status"?: string | null;
+  "Numerical Distributed"?: number | string | boolean | null;
+  SOH?: number | null;
+  UnitSales?: number | null;
   "Product Brand"?: string | null;
   Brand?: string | null;
 }

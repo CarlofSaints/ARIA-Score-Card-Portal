@@ -526,11 +526,11 @@ export async function runSyncForTenant(
     }
   }
 
-  // ── Aggregate ND (GetNumericalDistribution_PNP — PnP channel) ──
-  // The SP returns per site-SKU rows it considers DISTRIBUTED within the scan
-  // window. ND% = distributed / ranged (range file) by channel/store/product —
-  // mirrors the phantom denominator logic (falls back to stores × products when
-  // no ranging file is loaded). One detail row per level for the ND page.
+  // ── Aggregate ND (GetDataForCustomDev_PNP_NumericalDistribution — PnP) ──
+  // The SP returns ALL ranged site-SKUs (Ranging Status = TRUE) with a
+  // "Numerical Distributed" flag (1 = distributed, 0 = not). ND% per entity =
+  // distributed / ranged, computed directly from these rows (self-contained —
+  // no range file). distributedCount = numerator, rangedCount = denominator.
   const seenNd = new Set<string>();
   const dedupedNd = ndRes.data.filter((row) => {
     const key = `${row.SiteCode}|${row["Product ID"]}`;
@@ -539,9 +539,18 @@ export async function runSyncForTenant(
     return true;
   });
 
-  const ndCountByChannel: Record<string, number> = {};
-  const ndCountByStore: Record<string, number> = {};
-  const ndCountByProduct: Record<string, number> = {};
+  const isDistributed = (v: unknown): boolean => {
+    const s = String(v ?? "").trim().toLowerCase();
+    return s === "1" || s === "true" || s === "yes" || s === "y";
+  };
+
+  // [distributed, rangedTotal] per entity id.
+  const ndDistByChannel: Record<string, number> = {};
+  const ndRangedByChannel: Record<string, number> = {};
+  const ndDistByStore: Record<string, number> = {};
+  const ndRangedByStore: Record<string, number> = {};
+  const ndDistByProduct: Record<string, number> = {};
+  const ndRangedByProduct: Record<string, number> = {};
   // Resolve brand per product id from the SP rows (preferred over the master).
   const ndBrandByProduct: Record<string, string> = {};
 
@@ -551,10 +560,20 @@ export async function runSyncForTenant(
     const channelId = store
       ? channelIdByName.get(store.channelName)
       : channelIdByName.get(row.Channel);
+    const dist = isDistributed(row["Numerical Distributed"]);
 
-    if (channelId) ndCountByChannel[channelId] = (ndCountByChannel[channelId] || 0) + 1;
-    if (store) ndCountByStore[store.id] = (ndCountByStore[store.id] || 0) + 1;
-    if (product) ndCountByProduct[product.id] = (ndCountByProduct[product.id] || 0) + 1;
+    if (channelId) {
+      ndRangedByChannel[channelId] = (ndRangedByChannel[channelId] || 0) + 1;
+      if (dist) ndDistByChannel[channelId] = (ndDistByChannel[channelId] || 0) + 1;
+    }
+    if (store) {
+      ndRangedByStore[store.id] = (ndRangedByStore[store.id] || 0) + 1;
+      if (dist) ndDistByStore[store.id] = (ndDistByStore[store.id] || 0) + 1;
+    }
+    if (product) {
+      ndRangedByProduct[product.id] = (ndRangedByProduct[product.id] || 0) + 1;
+      if (dist) ndDistByProduct[product.id] = (ndDistByProduct[product.id] || 0) + 1;
+    }
 
     const spBrand = String(row["Product Brand"] ?? row.Brand ?? "");
     if (product && spBrand) ndBrandByProduct[product.id] = spBrand;
@@ -564,13 +583,13 @@ export async function runSyncForTenant(
   const ndByStore: Record<string, number> = {};
   const ndByProduct: Record<string, number> = {};
   const ndDetailRows: NdDetailRow[] = [];
+  const ndPct = (dist: number, ranged: number) =>
+    ranged > 0 ? Math.round((dist / ranged) * 1000) / 10 : 0;
 
   for (const ch of channels) {
-    const count = ndCountByChannel[ch.id] || 0;
-    const total = hasRanging
-      ? rangedTotalByChannelName[ch.name] || 0
-      : oosTotalByChannel[ch.id] || 0;
-    const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+    const dist = ndDistByChannel[ch.id] || 0;
+    const ranged = ndRangedByChannel[ch.id] || 0;
+    const pct = ndPct(dist, ranged);
     ndByChannel[ch.id] = pct;
     ndDetailRows.push({
       level: "channel",
@@ -581,20 +600,16 @@ export async function runSyncForTenant(
       productId: "",
       productName: "",
       brand: "",
-      rangedCount: count,
-      totalCount: total,
+      rangedCount: dist,
+      totalCount: ranged,
       ndPercent: pct,
     });
   }
 
   for (const st of stores) {
-    const count = ndCountByStore[st.id] || 0;
-    const total = hasRanging
-      ? st.siteCode
-        ? rangedByStoreCode[st.siteCode] || 0
-        : 0
-      : oosTotalByStore[st.id] || 0;
-    const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+    const dist = ndDistByStore[st.id] || 0;
+    const ranged = ndRangedByStore[st.id] || 0;
+    const pct = ndPct(dist, ranged);
     ndByStore[st.id] = pct;
     ndDetailRows.push({
       level: "store",
@@ -605,18 +620,16 @@ export async function runSyncForTenant(
       productId: "",
       productName: "",
       brand: "",
-      rangedCount: count,
-      totalCount: total,
+      rangedCount: dist,
+      totalCount: ranged,
       ndPercent: pct,
     });
   }
 
   for (const p of products) {
-    const count = ndCountByProduct[p.id] || 0;
-    const total = hasRanging
-      ? rangedByProductId[p.sku] || 0
-      : oosTotalByProduct[p.id] || 0;
-    const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
+    const dist = ndDistByProduct[p.id] || 0;
+    const ranged = ndRangedByProduct[p.id] || 0;
+    const pct = ndPct(dist, ranged);
     ndByProduct[p.id] = pct;
     ndDetailRows.push({
       level: "product",
@@ -627,8 +640,8 @@ export async function runSyncForTenant(
       productId: p.sku,
       productName: p.name,
       brand: ndBrandByProduct[p.id] || p.brand || "",
-      rangedCount: count,
-      totalCount: total,
+      rangedCount: dist,
+      totalCount: ranged,
       ndPercent: pct,
     });
   }
