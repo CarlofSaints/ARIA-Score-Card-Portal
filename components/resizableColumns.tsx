@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 
 /**
  * Per-column pixel widths with mouse-drag resizing. Pair with a <colgroup> that
@@ -64,7 +64,7 @@ export function Th({
   onResize,
   align = "left",
 }: {
-  label: string;
+  label: ReactNode;
   colKey: string;
   sortKey?: string;
   sortDir?: "asc" | "desc";

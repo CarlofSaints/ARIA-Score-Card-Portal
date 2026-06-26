@@ -12,7 +12,7 @@ type SortKey = "name" | "level" | "channelName" | "value" | "units" | "prev" | "
 
 const COLS: { key: SortKey; label: string; width: number; align?: "right" | "center"; sortable?: boolean }[] = [
   { key: "name", label: "Entity", width: 300 },
-  { key: "level", label: "Level", width: 90, sortable: false },
+  { key: "level", label: "Level", width: 90 },
   { key: "channelName", label: "Channel", width: 120 },
   { key: "value", label: "Value", width: 140, align: "right" },
   { key: "units", label: "Units", width: 110, align: "right" },
