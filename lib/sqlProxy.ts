@@ -331,3 +331,16 @@ export interface SqlSalesPnpRow {
 export async function getSalesPnp(client: string) {
   return sqlQuery<SqlSalesPnpRow>("sales_pnp", { client });
 }
+
+// ── SPAR channel SPs (primary .234 server) ───────────────────────────────────
+// SPAR Sales returns the identical column set to PnP Sales (Channel = "SPAR").
+// SPAR ND mirrors PnP ND (Numerical Distributed flag). SPAR has NO SOH, so there
+// is no SPAR OOS or Phantom — those KPIs stay blank for SPAR and their points
+// redistribute over the available KPIs (see scoreEngine.buildEntityScore).
+export async function getSparSales(client: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_spar", { client });
+}
+
+export async function getSparNd(client: string, scanRange = 60) {
+  return sqlQuery<SqlNdPnpRow>("nd_spar", { client, scanRange });
+}

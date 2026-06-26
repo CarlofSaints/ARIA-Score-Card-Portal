@@ -4,7 +4,9 @@ import { getTenantSlug } from "@/lib/getTenantSlug";
 import { readJson } from "@/lib/blob";
 import { runSyncForTenant } from "@/lib/runSync";
 
-export const maxDuration = 120;
+// SPAR's sales SP is heavy (~100s on the primary server); give the whole sync
+// plenty of headroom (matches the cron route).
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   try {

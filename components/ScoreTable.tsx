@@ -174,7 +174,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
                   <td className="px-4 py-3 font-medium text-[var(--color-text)] truncate">{s.entityName}</td>
                   {KPI_DEFS.map((kpi) => {
                     const ks = s.kpiScores.find((k) => k.kpiKey === kpi.key);
-                    if (s.hasData === false) {
+                    if (s.hasData === false || ks?.na) {
                       return (
                         <td key={kpi.key} className="text-center px-3 py-3 text-[var(--color-text-muted)]">
                           —

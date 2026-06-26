@@ -51,28 +51,36 @@ export async function GET(
 
     // KPI percentage blobs are stored per level. CAM derives from channel data.
     const lvl = type === "cam" ? "channel" : type;
+    type CoverSet = { channels: string[]; stores: string[]; products: string[] };
+    type Coverage = { sales?: CoverSet; nd?: CoverSet; oos?: CoverSet; phantom?: CoverSet };
     const [oosData, ndData, phantomData, coverage] = await Promise.all([
       readJson<Record<string, number>>(`${slug}/data/kpi/${period}/oos-${lvl}.json`, {}),
       readJson<Record<string, number>>(`${slug}/data/kpi/${period}/nd-${lvl}.json`, {}),
       readJson<Record<string, number>>(`${slug}/data/kpi/${period}/phantom-${lvl}.json`, {}),
-      readJson<{ channels: string[]; stores: string[]; products: string[] }>(
-        `${slug}/data/kpi/${period}/coverage.json`,
-        { channels: [], stores: [], products: [] }
-      ),
+      readJson<Coverage>(`${slug}/data/kpi/${period}/coverage.json`, {}),
     ]);
 
-    // Which entity ids have source data. CAM gates on channel coverage. An empty
-    // coverage list (pre-coverage sync) means "treat everything as covered" so
-    // behaviour is unchanged until the next sync writes coverage.
-    const coverList =
-      type === "product"
-        ? coverage.products
-        : type === "store"
-        ? coverage.stores
-        : coverage.channels;
-    const coveredSet = new Set(coverList);
-    const coverageKnown = coveredSet.size > 0;
-    const isCovered = (id: string) => !coverageKnown || coveredSet.has(id);
+    // Per-KPI coverage. Different channels carry different KPIs (PnP has all
+    // four; SPAR has only Sales + ND). CAM gates on channel coverage. If no
+    // per-KPI coverage is recorded yet (pre-resync), treat everything as present
+    // so behaviour is unchanged until the next sync writes the new coverage.
+    const entityField: keyof CoverSet =
+      type === "product" ? "products" : type === "store" ? "stores" : "channels";
+    const covSet = (src?: CoverSet) => new Set(src?.[entityField] ?? []);
+    const cov: Record<KpiKey, Set<string>> = {
+      sales_growth: covSet(coverage.sales),
+      numerical_distribution: covSet(coverage.nd),
+      oos: covSet(coverage.oos),
+      phantom_inventory: covSet(coverage.phantom),
+    };
+    const coverageKnown = (Object.values(cov) as Set<string>[]).some((s) => s.size > 0);
+    const presentFor = (kpi: KpiKey, id: string) => !coverageKnown || cov[kpi].has(id);
+    const KPI_KEYS: KpiKey[] = [
+      "sales_growth",
+      "numerical_distribution",
+      "phantom_inventory",
+      "oos",
+    ];
 
     const at = (rec: Record<string, number>, id: string): number | null =>
       id in rec ? rec[id] : null;
@@ -94,15 +102,18 @@ export async function GET(
       scores = entities.map((e) => {
         const id = e.id;
         const name = "name" in e ? e.name : id;
-        const covered = isCovered(id);
-        const percents: Record<KpiKey, number | null> = covered
-          ? {
-              sales_growth: salesGrowthPercent(salesById.get(id), metric),
-              numerical_distribution: at(ndData, id),
-              phantom_inventory: at(phantomData, id),
-              oos: at(oosData, id),
-            }
-          : { sales_growth: null, numerical_distribution: null, phantom_inventory: null, oos: null };
+        const present: Record<KpiKey, boolean> = {
+          sales_growth: presentFor("sales_growth", id),
+          numerical_distribution: presentFor("numerical_distribution", id),
+          phantom_inventory: presentFor("phantom_inventory", id),
+          oos: presentFor("oos", id),
+        };
+        const percents: Record<KpiKey, number | null> = {
+          sales_growth: present.sales_growth ? salesGrowthPercent(salesById.get(id), metric) : null,
+          numerical_distribution: present.numerical_distribution ? at(ndData, id) : null,
+          phantom_inventory: present.phantom_inventory ? at(phantomData, id) : null,
+          oos: present.oos ? at(oosData, id) : null,
+        };
         const score = buildEntityScore({
           entityId: id,
           entityName: name,
@@ -111,8 +122,9 @@ export async function GET(
           percents,
           weightings,
           scoring,
+          present,
         });
-        score.hasData = covered;
+        score.hasData = KPI_KEYS.some((k) => present[k]);
         return score;
       });
     } else {
@@ -130,18 +142,30 @@ export async function GET(
       };
 
       scores = mappings.map((m) => {
-        // Only average over channels that actually have data — empty channels
-        // must not dilute the CAM (this is why a PnP CAM read 0.0% vs PNP 0.1%).
-        const ch = m.channelIds.filter((id) => isCovered(id));
-        const covered = ch.length > 0;
-        const percents: Record<KpiKey, number | null> = covered
-          ? {
-              sales_growth: avg(ch.map((id) => salesGrowthPercent(salesById.get(id), metric))),
-              numerical_distribution: avg(ch.map((id) => at(ndData, id))),
-              phantom_inventory: avg(ch.map((id) => at(phantomData, id))),
-              oos: avg(ch.map((id) => at(oosData, id))),
-            }
-          : { sales_growth: null, numerical_distribution: null, phantom_inventory: null, oos: null };
+        // Per KPI, average only over the CAM's channels that have THAT KPI's
+        // data. So a CAM over PnP+SPAR gets OOS from PnP only, while Sales/ND
+        // average both. Empty channels never dilute (the Jaryd fix), and a KPI
+        // no mapped channel has becomes "—" (its points redistribute).
+        const chFor = (kpi: KpiKey) =>
+          m.channelIds.filter((id) => presentFor(kpi, id));
+        const present: Record<KpiKey, boolean> = {
+          sales_growth: chFor("sales_growth").length > 0,
+          numerical_distribution: chFor("numerical_distribution").length > 0,
+          phantom_inventory: chFor("phantom_inventory").length > 0,
+          oos: chFor("oos").length > 0,
+        };
+        const percents: Record<KpiKey, number | null> = {
+          sales_growth: present.sales_growth
+            ? avg(chFor("sales_growth").map((id) => salesGrowthPercent(salesById.get(id), metric)))
+            : null,
+          numerical_distribution: present.numerical_distribution
+            ? avg(chFor("numerical_distribution").map((id) => at(ndData, id)))
+            : null,
+          phantom_inventory: present.phantom_inventory
+            ? avg(chFor("phantom_inventory").map((id) => at(phantomData, id)))
+            : null,
+          oos: present.oos ? avg(chFor("oos").map((id) => at(oosData, id))) : null,
+        };
         const score = buildEntityScore({
           entityId: m.id,
           entityName: m.camName,
@@ -150,8 +174,9 @@ export async function GET(
           percents,
           weightings,
           scoring,
+          present,
         });
-        score.hasData = covered;
+        score.hasData = KPI_KEYS.some((k) => present[k]);
         return score;
       });
     }

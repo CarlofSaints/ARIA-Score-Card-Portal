@@ -232,8 +232,9 @@ export interface KpiScore {
   kpiKey: KpiKey;
   rawValue: number; // 0–100 performance value used for scoring (health-oriented)
   percent?: number; // actual business metric % for display (e.g. phantom % = 12.8)
-  score: number; // weighted score contribution
-  maxScore: number; // maximum possible weighted score
+  score: number; // weighted score contribution (after any redistribution)
+  maxScore: number; // maximum possible weighted score (effective weight)
+  na?: boolean; // true = this KPI has no data for this entity (show "—", excluded; its points were redistributed)
 }
 
 export interface EntityScore {

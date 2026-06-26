@@ -123,9 +123,15 @@ export function salesGrowthPercent(
 
 /**
  * Build an entity's full score from its KPI metric percentages and the tenant's
- * weightings + bracket config. `percents` carries the display metric for each
- * KPI (sales = growth %, ND/Phantom/OOS = the level %); null means "no data" and
- * scores 0. maxScore per KPI = its weight, so maxPossibleScore = sum of weights.
+ * weightings + bracket config.
+ *
+ * `percents` carries the display metric for each KPI (sales = growth %,
+ * ND/Phantom/OOS = the level %). `present` says whether the entity has data for
+ * each KPI (e.g. SPAR has Sales + ND but no OOS/Phantom). KPIs that are NOT
+ * present are marked `na` (shown as "—"); their points are REDISTRIBUTED over
+ * the present KPIs in proportion to the present KPIs' own weights, so the entity
+ * is still scored out of the full pool (100). This is the "split the delta over
+ * the other KPIs by the same proportion" behaviour.
  */
 export function buildEntityScore(params: {
   entityId: string;
@@ -135,6 +141,7 @@ export function buildEntityScore(params: {
   percents: Record<KpiKey, number | null>;
   weightings: KpiWeighting[];
   scoring: KpiScoringConfig[];
+  present?: Record<KpiKey, boolean>;
 }): EntityScore {
   const keys: KpiKey[] = [
     "sales_growth",
@@ -142,19 +149,32 @@ export function buildEntityScore(params: {
     "numerical_distribution",
     "oos",
   ];
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const weightOf = (k: KpiKey) => params.weightings.find((w) => w.key === k)?.weight ?? 0;
+  const isPresent = (k: KpiKey) => params.present?.[k] ?? true;
+
+  // Scale present KPIs up so they share the whole pool (redistributes the
+  // weights of the absent KPIs in proportion to the present ones' weights).
+  const totalWeight = keys.reduce((s, k) => s + weightOf(k), 0);
+  const presentWeight = keys.filter(isPresent).reduce((s, k) => s + weightOf(k), 0);
+  const scale = presentWeight > 0 ? totalWeight / presentWeight : 1;
 
   const kpiScores: KpiScore[] = keys.map((key) => {
-    const weight = params.weightings.find((w) => w.key === key)?.weight ?? 0;
+    const weight = weightOf(key);
+    if (!isPresent(key)) {
+      return { kpiKey: key, rawValue: 0, percent: undefined, score: 0, maxScore: 0, na: true };
+    }
     const brackets = params.scoring.find((s) => s.key === key)?.brackets ?? [];
     const percent = params.percents[key];
-    const score =
-      percent === null ? 0 : pointsForValue(percent, brackets, weight);
+    const rawPoints = percent === null ? 0 : pointsForValue(percent, brackets, weight);
+    const score = r1(rawPoints * scale);
+    const maxScore = r1(weight * scale);
     return {
       kpiKey: key,
-      rawValue: weight > 0 ? Math.round((score / weight) * 1000) / 10 : 0,
+      rawValue: maxScore > 0 ? r1((score / maxScore) * 100) : 0,
       percent: percent === null ? undefined : percent,
-      score: Math.round(score * 10) / 10,
-      maxScore: weight,
+      score,
+      maxScore,
     };
   });
 
@@ -167,8 +187,8 @@ export function buildEntityScore(params: {
     entityType: params.entityType,
     period: params.period,
     kpiScores,
-    totalScore: Math.round(totalScore * 10) / 10,
-    maxPossibleScore,
+    totalScore: r1(totalScore),
+    maxPossibleScore: r1(maxPossibleScore),
   };
 }
 

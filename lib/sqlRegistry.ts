@@ -185,6 +185,20 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     usedBy:
       "Sync → sales/<period>/{channels,stores,products,detail}.json; Sales page, scorecards",
   },
+  {
+    name: "sales_spar",
+    label: "Sales — SPAR (Stored Procedure)",
+    category: "Sales",
+    kind: "stored_procedure",
+    status: "live",
+    purpose:
+      "SPAR sales: same column set as the PnP sales SP (YTD/MTD/PMTD/PY-MTD), Channel = SPAR. Runs on the PRIMARY (.234) server — NOT the phantom server. Heavy (~100s, 100k+ rows). Merged with PnP sales in the sync.",
+    server: POOL1,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [GetDataForCustomDev_SPAR_Sales] @ClientName = @client",
+    usedBy: "Sync → sales/<period>/* (merged with PnP); Sales page, scorecards",
+  },
 
   // ── Numerical Distribution ─────────────────────────────────────────
   {
@@ -242,6 +256,23 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     ],
     sql: "EXEC [dbo].[GetDataForCustomDev_PNP_NumericalDistribution] @ClientName = @client, @ScanRange = @scanRange\n-- returns ALL ranged site-SKUs with a [Numerical Distributed] flag (1/0) + SOH, UnitSales.\n-- ND% = distributed / ranged, computed per entity in the sync (self-contained, no range file).",
     usedBy: "Sync → nd/<period>/detail.json + kpi/<period>/nd-*.json; ND page, scorecards",
+  },
+  {
+    name: "nd_spar",
+    label: "Numerical Distribution — SPAR (Stored Procedure)",
+    category: "Numerical Distribution",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "SPAR numerical distribution, mirrors the PnP ND SP (Numerical Distributed flag). Runs on the PRIMARY (.234) server. ⚠ BLOCKED: proxy login needs GRANT EXECUTE on GetDataForCustomDev_SPAR_NumericalDistribution (Mark). Merged with PnP ND in the sync once granted.",
+    server: POOL1,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "scanRange", description: "Rolling window in days (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_SPAR_NumericalDistribution] @ClientName = @client, @ScanRange = @scanRange",
+    usedBy: "Sync → nd/<period>/* (merged with PnP); ND page, scorecards",
   },
 
   // ── Out of Stocks ──────────────────────────────────────────────────

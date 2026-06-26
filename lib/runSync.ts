@@ -7,8 +7,10 @@ import {
   getClientProducts,
   getClientBrands,
   getSalesPnp,
+  getSparSales,
   getOosPnp,
   getNdPnp,
+  getSparNd,
   getPhantomStockPnp,
 } from "@/lib/sqlProxy";
 import type {
@@ -104,41 +106,65 @@ export async function runSyncForTenant(
     category: p["Product Category"] || undefined,
   }));
 
-  // ── Batch 2: Sales, OOS, ND, Phantom, Brands ──
-  // Track whether each PnP stored procedure actually succeeded — a failed call
-  // must NOT overwrite previously-synced data with an empty set.
-  let salesOk = true;
+  // ── Batch 2: Sales, OOS, ND, Phantom, Brands (PnP + SPAR) ──
+  // Track whether each stored procedure actually succeeded — a failed call must
+  // NOT overwrite previously-synced data with an empty set. Sales and ND are now
+  // multi-channel: PnP (pool2) + SPAR (primary) run in parallel and their rows
+  // are merged. SPAR has no SOH → no SPAR OOS/Phantom.
+  let salesPnpOk = true;
+  let salesSparOk = true;
   let salesError = "";
   let oosOk = true;
   let oosError = "";
-  let ndOk = true;
+  let ndPnpOk = true;
+  let ndSparOk = true;
   let ndError = "";
   let phantomOk = true;
   let phantomError = "";
 
-  const [salesRes, oosRes, ndRes, phantomRes, brandsRes] = await Promise.all([
-    getSalesPnp(client).catch((e) => {
-      salesOk = false;
-      salesError = e instanceof Error ? e.message : String(e);
-      return { data: [], count: 0 };
-    }),
-    getOosPnp(client).catch((e) => {
-      oosOk = false;
-      oosError = e instanceof Error ? e.message : String(e);
-      return { data: [], count: 0 };
-    }),
-    getNdPnp(client, ndRollingDays).catch((e) => {
-      ndOk = false;
-      ndError = e instanceof Error ? e.message : String(e);
-      return { data: [], count: 0 };
-    }),
-    getPhantomStockPnp(client, phantomDays).catch((e) => {
-      phantomOk = false;
-      phantomError = e instanceof Error ? e.message : String(e);
-      return { data: [], count: 0 };
-    }),
-    getClientBrands(client).catch(() => ({ data: [], count: 0 })),
-  ]);
+  const [salesPnpRes, salesSparRes, oosRes, ndPnpRes, ndSparRes, phantomRes, brandsRes] =
+    await Promise.all([
+      getSalesPnp(client).catch((e) => {
+        salesPnpOk = false;
+        salesError = e instanceof Error ? e.message : String(e);
+        return { data: [], count: 0 };
+      }),
+      getSparSales(client).catch((e) => {
+        salesSparOk = false;
+        salesError = (salesError ? salesError + " | " : "") + "SPAR: " + (e instanceof Error ? e.message : String(e));
+        return { data: [], count: 0 };
+      }),
+      getOosPnp(client).catch((e) => {
+        oosOk = false;
+        oosError = e instanceof Error ? e.message : String(e);
+        return { data: [], count: 0 };
+      }),
+      getNdPnp(client, ndRollingDays).catch((e) => {
+        ndPnpOk = false;
+        ndError = e instanceof Error ? e.message : String(e);
+        return { data: [], count: 0 };
+      }),
+      getSparNd(client, ndRollingDays).catch((e) => {
+        ndSparOk = false;
+        ndError = (ndError ? ndError + " | " : "") + "SPAR: " + (e instanceof Error ? e.message : String(e));
+        return { data: [], count: 0 };
+      }),
+      getPhantomStockPnp(client, phantomDays).catch((e) => {
+        phantomOk = false;
+        phantomError = e instanceof Error ? e.message : String(e);
+        return { data: [], count: 0 };
+      }),
+      getClientBrands(client).catch(() => ({ data: [], count: 0 })),
+    ]);
+
+  // Merge PnP + SPAR rows for the multi-channel KPIs. Each row carries its own
+  // Channel, so the per-channel/store/product aggregation handles both natively.
+  const salesRes = { data: [...salesPnpRes.data, ...salesSparRes.data] };
+  const ndRes = { data: [...ndPnpRes.data, ...ndSparRes.data] };
+  // Sales/ND are written if ANY of their channels returned data (so a SPAR
+  // timeout doesn't wipe PnP, and vice-versa).
+  const salesOk = salesPnpOk || salesSparOk;
+  const ndOk = ndPnpOk || ndSparOk;
 
   // ── Shared lookup maps (used by Sales, OOS, ND and Phantom aggregation) ──
   const channelIdByName = new Map<string, string>(
@@ -661,32 +687,34 @@ export async function runSyncForTenant(
   // Extract brand list
   const brands: string[] = brandsRes.data.map((b) => b.Brand);
 
-  // ── Coverage: which entities actually have source data ──
-  // The SPs are PnP-only, so non-PnP channels/stores/products appear in NO SP
-  // result. We record the entity ids that show up in ANY source (sales, OOS,
-  // ND, phantom) so the scorecards can show "no data" (—) for the rest instead
-  // of scoring them 0 (which would also dilute CAM averages).
-  const coveredChannels = new Set<string>();
-  const coveredStores = new Set<string>();
-  const coveredProducts = new Set<string>();
-  const markCoverage = (siteCode: string, productId: string, channelName: string) => {
-    const store = storeBySiteCode.get(siteCode);
-    const product = productBySku.get(productId);
-    const channelId = store
-      ? channelIdByName.get(store.channelName)
-      : channelIdByName.get(channelName);
-    if (channelId) coveredChannels.add(channelId);
-    if (store) coveredStores.add(store.id);
-    if (product) coveredProducts.add(product.id);
+  // ── Coverage: which entities have data, PER KPI ──
+  // Channels differ by KPI: PnP has all four; SPAR has only Sales + ND (no SOH →
+  // no OOS/Phantom). The scores route uses this to (a) show "—" for KPIs an
+  // entity has no data for, and (b) redistribute the missing KPIs' points over
+  // the ones it does have. An entity with no data for any KPI shows as no-data.
+  const coverageFrom = (
+    rows: ReadonlyArray<{ SiteCode: string; "Product ID": string; Channel: string }>
+  ) => {
+    const ch = new Set<string>();
+    const st = new Set<string>();
+    const pr = new Set<string>();
+    for (const r of rows) {
+      const store = storeBySiteCode.get(r.SiteCode);
+      const product = productBySku.get(r["Product ID"]);
+      const channelId = store
+        ? channelIdByName.get(store.channelName)
+        : channelIdByName.get(r.Channel);
+      if (channelId) ch.add(channelId);
+      if (store) st.add(store.id);
+      if (product) pr.add(product.id);
+    }
+    return { channels: [...ch], stores: [...st], products: [...pr] };
   };
-  for (const r of salesRes.data) markCoverage(r.SiteCode, r["Product ID"], r.Channel);
-  for (const r of oosRows) markCoverage(r.SiteCode, r["Product ID"], r.Channel);
-  for (const r of dedupedNd) markCoverage(r.SiteCode, r["Product ID"], r.Channel);
-  for (const r of dedupedPhantom) markCoverage(r.SiteCode, r["Product ID"], r.Channel);
   const coverage = {
-    channels: [...coveredChannels],
-    stores: [...coveredStores],
-    products: [...coveredProducts],
+    sales: coverageFrom(salesRes.data),
+    nd: coverageFrom(dedupedNd),
+    oos: coverageFrom(oosRows),
+    phantom: coverageFrom(dedupedPhantom),
   };
 
   // ── Write everything to blob ──
@@ -759,12 +787,16 @@ export async function runSyncForTenant(
     syncMeta.salesRowCount = salesRes.data.length;
   }
   syncMeta.salesOk = salesOk;
+  syncMeta.salesPnpOk = salesPnpOk;
+  syncMeta.salesSparOk = salesSparOk;
   syncMeta.salesError = salesError;
   if (oosOk) syncMeta.oosDetailCount = oosDetailRows.length;
   syncMeta.oosOk = oosOk;
   syncMeta.oosError = oosError;
   if (ndOk) syncMeta.ndDetailCount = ndDetailRows.length;
   syncMeta.ndOk = ndOk;
+  syncMeta.ndPnpOk = ndPnpOk;
+  syncMeta.ndSparOk = ndSparOk;
   syncMeta.ndError = ndError;
   // Record the scan window actually used so the ND page can show it.
   if (ndOk) syncMeta.ndRollingDays = ndRollingDays;
