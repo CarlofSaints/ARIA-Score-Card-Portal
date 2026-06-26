@@ -284,3 +284,39 @@ export async function getOosPnp(client: string) {
 export async function getNdPnp(client: string, scanRange = 60) {
   return sqlQuery<SqlNdPnpRow>("nd_pnp", { client, scanRange });
 }
+
+// Rows returned by GetSales_PNP (PnP channel). One row per site-SKU with both
+// YTD and MTD measures plus prior-year (PY) comparatives. The SP takes only the
+// client name (windows are computed inside the SP — see YTDStartDate/MTDStartDate
+// returned on each row). NOTE: the *Units columns come back as STRINGS ("0"),
+// the *Value columns as numbers — coerce units with Number() when aggregating.
+export interface SqlSalesPnpRow {
+  MaxDate?: string;
+  YTDStartDate?: string;
+  MTDStartDate?: string;
+  SiteCode: string;
+  SiteName: string;
+  Channel: string;
+  SubChannel: string | null;
+  Province: string | null;
+  ChannelArticle: string;
+  "Product ID": string;
+  "Product Description": string;
+  "Product Brand"?: string | null;
+  Brand?: string | null;
+  "Product Status": string | null;
+  "Channel Product Status": string | null;
+  "Ranging Status": string | null;
+  "YTD Units": number | string;
+  "YTD Value": number | string;
+  "PY YTD Units": number | string;
+  "PY YTD Value": number | string;
+  "MTD Units": number | string;
+  "MTD Value": number | string;
+  "PY MTD Units": number | string;
+  "PY MTD Value": number | string;
+}
+
+export async function getSalesPnp(client: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_pnp", { client });
+}

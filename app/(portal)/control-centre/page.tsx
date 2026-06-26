@@ -131,7 +131,7 @@ export default function ControlCentrePage() {
       const data = await res.json();
       if (res.ok) {
         setSyncMessage(
-          `Synced: ${data.counts.channels} channels, ${data.counts.stores} stores, ${data.counts.products} products, ${data.counts.oosDetail} OOS, ${data.counts.ndDetail} ND, ${data.counts.phantomDetail} phantom`
+          `Synced: ${data.counts.channels} channels, ${data.counts.stores} stores, ${data.counts.products} products, ${data.counts.salesDetail} sales, ${data.counts.oosDetail} OOS, ${data.counts.ndDetail} ND, ${data.counts.phantomDetail} phantom`
         );
         setSyncMeta((prev) => ({
           ...prev,

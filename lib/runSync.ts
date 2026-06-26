@@ -6,9 +6,7 @@ import {
   getClientStores,
   getClientProducts,
   getClientBrands,
-  getYtdSalesByChannel,
-  getYtdSalesByStore,
-  getYtdSalesByProduct,
+  getSalesPnp,
   getOosPnp,
   getNdPnp,
   getPhantomStockPnp,
@@ -18,6 +16,7 @@ import type {
   ScorecardStore,
   ScorecardProduct,
   SalesData,
+  SalesDetailRow,
   PhantomDetailRow,
   OosDetailRow,
   NdDetailRow,
@@ -32,9 +31,10 @@ export interface SyncResult {
     stores: number;
     products: number;
     brands: number;
-    salesChannels: number;
-    salesStores: number;
-    salesProducts: number;
+    salesChannels: number | string;
+    salesStores: number | string;
+    salesProducts: number | string;
+    salesDetail: number | string;
     oosDetail: number | string;
     ndDetail: number | string;
     phantomDetail: number | string;
@@ -106,6 +106,8 @@ export async function runSyncForTenant(
   // ── Batch 2: Sales, OOS, ND, Phantom, Brands ──
   // Track whether each PnP stored procedure actually succeeded — a failed call
   // must NOT overwrite previously-synced data with an empty set.
+  let salesOk = true;
+  let salesError = "";
   let oosOk = true;
   let oosError = "";
   let ndOk = true;
@@ -113,18 +115,12 @@ export async function runSyncForTenant(
   let phantomOk = true;
   let phantomError = "";
 
-  const [
-    salesChannelRes,
-    salesStoreRes,
-    salesProductRes,
-    oosRes,
-    ndRes,
-    phantomRes,
-    brandsRes,
-  ] = await Promise.all([
-    getYtdSalesByChannel(client).catch(() => ({ data: [], count: 0 })),
-    getYtdSalesByStore(client).catch(() => ({ data: [], count: 0 })),
-    getYtdSalesByProduct(client).catch(() => ({ data: [], count: 0 })),
+  const [salesRes, oosRes, ndRes, phantomRes, brandsRes] = await Promise.all([
+    getSalesPnp(client).catch((e) => {
+      salesOk = false;
+      salesError = e instanceof Error ? e.message : String(e);
+      return { data: [], count: 0 };
+    }),
     getOosPnp(client).catch((e) => {
       oosOk = false;
       oosError = e instanceof Error ? e.message : String(e);
@@ -143,44 +139,7 @@ export async function runSyncForTenant(
     getClientBrands(client).catch(() => ({ data: [], count: 0 })),
   ]);
 
-  // ── Transform sales rows into SalesData[] ──
-  const salesChannels: SalesData[] = salesChannelRes.data.map((r) => {
-    const ch = channels.find((c) => c.name === r.Channel);
-    return {
-      entityId: ch?.id || String(r.ChannelDataID || r.Channel),
-      entityType: "channel" as const,
-      period,
-      salesValue: r.YTD_Value || 0,
-      salesUnits: r.YTD_Units || 0,
-      previousPeriodSalesValue: r.SPLY_Value || 0,
-      previousPeriodSalesUnits: r.SPLY_Units || 0,
-    };
-  });
-
-  const salesStores: SalesData[] = salesStoreRes.data.map((r) => ({
-    entityId: String(r.SiteID),
-    entityType: "store" as const,
-    period,
-    salesValue: r.YTD_Value || 0,
-    salesUnits: r.YTD_Units || 0,
-    previousPeriodSalesValue: r.SPLY_Value || 0,
-    previousPeriodSalesUnits: r.SPLY_Units || 0,
-  }));
-
-  const salesProducts: SalesData[] = salesProductRes.data.map((r) => {
-    const p = products.find((x) => x.sku === r.SKU);
-    return {
-      entityId: p?.id || String(r.ProductID),
-      entityType: "product" as const,
-      period,
-      salesValue: r.YTD_Value || 0,
-      salesUnits: r.YTD_Units || 0,
-      previousPeriodSalesValue: r.SPLY_Value || 0,
-      previousPeriodSalesUnits: r.SPLY_Units || 0,
-    };
-  });
-
-  // ── Shared lookup maps (used by OOS, ND and Phantom aggregation) ──
+  // ── Shared lookup maps (used by Sales, OOS, ND and Phantom aggregation) ──
   const channelIdByName = new Map<string, string>(
     channels.map((c) => [c.name, c.id] as [string, string])
   );
@@ -192,6 +151,164 @@ export async function runSyncForTenant(
   const productBySku = new Map<string, ScorecardProduct>(
     products.map((p) => [p.sku, p] as [string, ScorecardProduct])
   );
+
+  // ── Aggregate Sales (GetSales_PNP — PnP channel) ──
+  // The SP returns one row per site-SKU with YTD + MTD measures and their
+  // prior-year (PY) comparatives. SPLY = "PY YTD". We aggregate up to
+  // channel/store/product (the scorecard entity grains) producing both the
+  // SalesData[] used by the scoring engine and the SalesDetailRow[] rendered by
+  // the Sales page. Units columns come back as strings → coerce with num().
+  const num = (v: unknown): number => {
+    const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  interface SalesAgg {
+    ytdValue: number;
+    ytdUnits: number;
+    splyValue: number;
+    splyUnits: number;
+  }
+  const emptyAgg = (): SalesAgg => ({ ytdValue: 0, ytdUnits: 0, splyValue: 0, splyUnits: 0 });
+  const addRow = (a: SalesAgg, r: (typeof salesRes.data)[number]) => {
+    a.ytdValue += num(r["YTD Value"]);
+    a.ytdUnits += num(r["YTD Units"]);
+    a.splyValue += num(r["PY YTD Value"]);
+    a.splyUnits += num(r["PY YTD Units"]);
+  };
+
+  const salesByChannelId = new Map<string, SalesAgg>();
+  const salesByStoreId = new Map<string, SalesAgg>();
+  const salesByProductId = new Map<string, SalesAgg>();
+  // Resolve product display name/brand from the SP rows for product detail rows.
+  const salesBrandByProduct: Record<string, string> = {};
+  const salesNameByProduct: Record<string, string> = {};
+
+  for (const r of salesRes.data) {
+    const store = storeBySiteCode.get(r.SiteCode);
+    const product = productBySku.get(r["Product ID"]);
+    const channelId = store
+      ? channelIdByName.get(store.channelName)
+      : channelIdByName.get(r.Channel);
+
+    if (channelId) {
+      let a = salesByChannelId.get(channelId);
+      if (!a) salesByChannelId.set(channelId, (a = emptyAgg()));
+      addRow(a, r);
+    }
+    if (store) {
+      let a = salesByStoreId.get(store.id);
+      if (!a) salesByStoreId.set(store.id, (a = emptyAgg()));
+      addRow(a, r);
+    }
+    if (product) {
+      let a = salesByProductId.get(product.id);
+      if (!a) salesByProductId.set(product.id, (a = emptyAgg()));
+      addRow(a, r);
+      const spBrand = String(r["Product Brand"] ?? r.Brand ?? "");
+      if (spBrand) salesBrandByProduct[product.id] = spBrand;
+      if (r["Product Description"]) salesNameByProduct[product.id] = r["Product Description"];
+    }
+  }
+
+  const growth = (ytd: number, sply: number): number =>
+    sply > 0 ? Math.round(((ytd - sply) / sply) * 1000) / 10 : 0;
+
+  const salesChannels: SalesData[] = channels.map((ch) => {
+    const a = salesByChannelId.get(ch.id) || emptyAgg();
+    return {
+      entityId: ch.id,
+      entityType: "channel" as const,
+      period,
+      salesValue: a.ytdValue,
+      salesUnits: a.ytdUnits,
+      previousPeriodSalesValue: a.splyValue,
+      previousPeriodSalesUnits: a.splyUnits,
+    };
+  });
+
+  const salesStores: SalesData[] = stores.map((st) => {
+    const a = salesByStoreId.get(st.id) || emptyAgg();
+    return {
+      entityId: st.id,
+      entityType: "store" as const,
+      period,
+      salesValue: a.ytdValue,
+      salesUnits: a.ytdUnits,
+      previousPeriodSalesValue: a.splyValue,
+      previousPeriodSalesUnits: a.splyUnits,
+    };
+  });
+
+  const salesProducts: SalesData[] = products.map((p) => {
+    const a = salesByProductId.get(p.id) || emptyAgg();
+    return {
+      entityId: p.id,
+      entityType: "product" as const,
+      period,
+      salesValue: a.ytdValue,
+      salesUnits: a.ytdUnits,
+      previousPeriodSalesValue: a.splyValue,
+      previousPeriodSalesUnits: a.splyUnits,
+    };
+  });
+
+  // One flat detail row per entity (channel/store/product) for the Sales page.
+  const salesDetailRows: SalesDetailRow[] = [];
+  for (const ch of channels) {
+    const a = salesByChannelId.get(ch.id) || emptyAgg();
+    salesDetailRows.push({
+      level: "channel",
+      entityId: ch.id,
+      channelName: ch.name,
+      siteCode: "",
+      storeName: "",
+      productId: "",
+      productName: "",
+      brand: "",
+      ytdValue: a.ytdValue,
+      ytdUnits: a.ytdUnits,
+      splyValue: a.splyValue,
+      splyUnits: a.splyUnits,
+      growthPercent: growth(a.ytdValue, a.splyValue),
+    });
+  }
+  for (const st of stores) {
+    const a = salesByStoreId.get(st.id) || emptyAgg();
+    salesDetailRows.push({
+      level: "store",
+      entityId: st.id,
+      channelName: st.channelName,
+      siteCode: st.siteCode || st.id,
+      storeName: st.name,
+      productId: "",
+      productName: "",
+      brand: "",
+      ytdValue: a.ytdValue,
+      ytdUnits: a.ytdUnits,
+      splyValue: a.splyValue,
+      splyUnits: a.splyUnits,
+      growthPercent: growth(a.ytdValue, a.splyValue),
+    });
+  }
+  for (const p of products) {
+    const a = salesByProductId.get(p.id) || emptyAgg();
+    salesDetailRows.push({
+      level: "product",
+      entityId: p.id,
+      channelName: "",
+      siteCode: "",
+      storeName: "",
+      productId: p.sku,
+      productName: salesNameByProduct[p.id] || p.name,
+      brand: salesBrandByProduct[p.id] || p.brand || "",
+      ytdValue: a.ytdValue,
+      ytdUnits: a.ytdUnits,
+      splyValue: a.splyValue,
+      splyUnits: a.splyUnits,
+      growthPercent: growth(a.ytdValue, a.splyValue),
+    });
+  }
 
   // ── Aggregate OOS (GetOutOfStock_PNP — PnP channel) ──
   // The SP returns per site-SKU rows it flags as out of stock. SiteCode maps to
@@ -473,11 +590,19 @@ export async function runSyncForTenant(
     writeJson(`${slug}/data/channels.json`, channels),
     writeJson(`${slug}/data/stores.json`, stores),
     writeJson(`${slug}/data/products.json`, products),
-    writeJson(`${slug}/data/sales/${period}/channels.json`, salesChannels),
-    writeJson(`${slug}/data/sales/${period}/stores.json`, salesStores),
-    writeJson(`${slug}/data/sales/${period}/products.json`, salesProducts),
     writeJson(`${slug}/data/brands.json`, brands),
   ];
+
+  // Only overwrite Sales data when the SP succeeded (a failed call must not wipe
+  // previously-synced sales with an empty set).
+  if (salesOk) {
+    writes.push(
+      writeJson(`${slug}/data/sales/${period}/channels.json`, salesChannels),
+      writeJson(`${slug}/data/sales/${period}/stores.json`, salesStores),
+      writeJson(`${slug}/data/sales/${period}/products.json`, salesProducts),
+      writeJson(`${slug}/data/sales/${period}/detail.json`, salesDetailRows)
+    );
+  }
 
   // Only overwrite OOS data when the SP succeeded.
   if (oosOk) {
@@ -521,9 +646,15 @@ export async function runSyncForTenant(
   syncMeta.storeCount = stores.length;
   syncMeta.productCount = products.length;
   syncMeta.brandCount = brands.length;
-  syncMeta.salesChannelCount = salesChannels.length;
-  syncMeta.salesStoreCount = salesStores.length;
-  syncMeta.salesProductCount = salesProducts.length;
+  if (salesOk) {
+    syncMeta.salesChannelCount = salesChannels.length;
+    syncMeta.salesStoreCount = salesStores.length;
+    syncMeta.salesProductCount = salesProducts.length;
+    syncMeta.salesDetailCount = salesDetailRows.length;
+    syncMeta.salesRowCount = salesRes.data.length;
+  }
+  syncMeta.salesOk = salesOk;
+  syncMeta.salesError = salesError;
   if (oosOk) syncMeta.oosDetailCount = oosDetailRows.length;
   syncMeta.oosOk = oosOk;
   syncMeta.oosError = oosError;
@@ -551,9 +682,10 @@ export async function runSyncForTenant(
       stores: stores.length,
       products: products.length,
       brands: brands.length,
-      salesChannels: salesChannels.length,
-      salesStores: salesStores.length,
-      salesProducts: salesProducts.length,
+      salesChannels: salesOk ? salesChannels.length : "(unchanged — SP failed)",
+      salesStores: salesOk ? salesStores.length : "(unchanged — SP failed)",
+      salesProducts: salesOk ? salesProducts.length : "(unchanged — SP failed)",
+      salesDetail: salesOk ? salesDetailRows.length : "(unchanged — SP failed)",
       oosDetail: oosOk ? oosDetailRows.length : "(unchanged — SP failed)",
       ndDetail: ndOk ? ndDetailRows.length : "(unchanged — SP failed)",
       phantomDetail: phantomOk ? phantomRows.length : "(unchanged — SP failed)",

@@ -170,6 +170,21 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     sql: "SELECT p.ID AS ProductID, p.[Client Product ID] AS SKU, p.[Product Description], p.[Product Brand],\n  SUM(CASE WHEN YEAR(f.[Date])=YEAR(GETDATE()) THEN f.ValueSales ELSE 0 END) AS YTD_Value,\n  SUM(CASE WHEN YEAR(f.[Date])=YEAR(GETDATE()) THEN f.UnitSales ELSE 0 END) AS YTD_Units,\n  SUM(CASE WHEN YEAR(f.[Date])=YEAR(GETDATE())-1 AND MONTH(f.[Date])<=MONTH(GETDATE()) THEN f.ValueSales ELSE 0 END) AS SPLY_Value,\n  SUM(CASE WHEN YEAR(f.[Date])=YEAR(GETDATE())-1 AND MONTH(f.[Date])<=MONTH(GETDATE()) THEN f.UnitSales ELSE 0 END) AS SPLY_Units\nFROM tblFactData f\nINNER JOIN tblProductLinks pl ON pl.ChannelArticleID=f.ChannelArticleID AND pl.Client=@client\nINNER JOIN tblProducts p ON p.[Client Product ID]=pl.[Product ID] AND p.Client=@client\nWHERE f.ClientID=(SELECT TOP 1 ClientID FROM tblClients WHERE Client=@client) AND f.IsDeleted=0 AND p.[Product Status]='ACTIVE'\nGROUP BY p.ID, p.[Client Product ID], p.[Product Description], p.[Product Brand]",
     usedBy: "Sync → sales/<period>/products.json; Sales page, Product scorecard",
   },
+  {
+    name: "sales_pnp",
+    label: "Sales — PnP (Stored Procedure)",
+    category: "Sales",
+    kind: "stored_procedure",
+    status: "live",
+    purpose:
+      "PnP sales: one row per site-SKU with YTD and MTD value/units plus prior-year (PY) comparatives. SPLY = PY YTD. The SP computes its own windows (returns YTDStartDate/MTDStartDate/MaxDate per row); the sync aggregates to channel/store/product. Note: the *Units columns come back as strings. Runs on the secondary (phantom) server. This is the live sales source (the ytd_sales_by_* queries above read the empty tblFactData and are superseded for PnP).",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [GetSales_PNP] @ClientName = @client\n-- returns: MaxDate, YTDStartDate, MTDStartDate, SiteCode, SiteName, Channel, SubChannel,\n-- Province, ChannelArticle, [Product ID], [Product Description], [Product Brand], [Product Status],\n-- [Channel Product Status], [Ranging Status], [YTD Units], [YTD Value], [PY YTD Units], [PY YTD Value],\n-- [MTD Units], [MTD Value], [PY MTD Units], [PY MTD Value]",
+    usedBy:
+      "Sync → sales/<period>/{channels,stores,products,detail}.json; Sales page, scorecards",
+  },
 
   // ── Numerical Distribution ─────────────────────────────────────────
   {
