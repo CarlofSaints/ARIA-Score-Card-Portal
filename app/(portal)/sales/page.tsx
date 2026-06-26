@@ -4,13 +4,30 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import PermissionGate from "@/components/PermissionGate";
+import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { SalesDetailRow } from "@/lib/types";
 
-type Level = "all" | "channel" | "store" | "product";
-type SortKey = "name" | "channelName" | "ytdValue" | "ytdUnits" | "splyValue" | "growthPercent";
+type View = "ytd" | "mtd";
+type SortKey = "name" | "level" | "channelName" | "value" | "units" | "prev" | "growth";
+
+const COLS: { key: SortKey; label: string; width: number; align?: "right" | "center"; sortable?: boolean }[] = [
+  { key: "name", label: "Entity", width: 300 },
+  { key: "level", label: "Level", width: 90, sortable: false },
+  { key: "channelName", label: "Channel", width: 120 },
+  { key: "value", label: "Value", width: 140, align: "right" },
+  { key: "units", label: "Units", width: 110, align: "right" },
+  { key: "prev", label: "Prev", width: 140, align: "right" },
+  { key: "growth", label: "Growth", width: 100, align: "right" },
+];
 
 function rand(v: number): string {
   return "R " + (v || 0).toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function entityName(r: SalesDetailRow): string {
+  if (r.level === "product") return r.productName || r.productId;
+  if (r.level === "store") return r.storeName || r.siteCode;
+  return r.channelName;
 }
 
 export default function SalesPage() {
@@ -21,11 +38,15 @@ export default function SalesPage() {
   const [period, setPeriod] = useState("");
   const [fetching, setFetching] = useState(true);
 
+  const [view, setView] = useState<View>("ytd");
   const [search, setSearch] = useState("");
-  const [level, setLevel] = useState<Level>("all");
   const [channel, setChannel] = useState("all");
-  const [sortKey, setSortKey] = useState<SortKey>("ytdValue");
+  const [sortKey, setSortKey] = useState<SortKey>("value");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const { widths, startResize, totalWidth } = useColumnWidths(
+    Object.fromEntries(COLS.map((c) => [c.key, c.width]))
+  );
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -43,83 +64,113 @@ export default function SalesPage() {
       .finally(() => setFetching(false));
   }, [user]);
 
-  const channels = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.channelName).filter(Boolean))).sort(),
-    [rows]
-  );
+  // Row accessors switch between YTD and MTD measures.
+  const val = (r: SalesDetailRow) => (view === "ytd" ? r.ytdValue : r.mtdValue);
+  const units = (r: SalesDetailRow) => (view === "ytd" ? r.ytdUnits : r.mtdUnits);
+  const prev = (r: SalesDetailRow) => (view === "ytd" ? r.splyValue : r.pyMtdValue);
+  const grow = (r: SalesDetailRow) => (view === "ytd" ? r.growthPercent : r.mtdGrowthPercent);
 
-  function entityName(r: SalesDetailRow): string {
-    if (r.level === "product") return r.productName || r.productId;
-    if (r.level === "store") return r.storeName || r.siteCode;
-    return r.channelName;
-  }
+  // Channel-level rows are no longer shown — only store and product.
+  const baseRows = useMemo(() => rows.filter((r) => r.level !== "channel"), [rows]);
+
+  const channels = useMemo(
+    () => Array.from(new Set(baseRows.map((r) => r.channelName).filter(Boolean))).sort(),
+    [baseRows]
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (level !== "all" && r.level !== level) return false;
+    return baseRows.filter((r) => {
       if (channel !== "all" && r.channelName !== channel) return false;
       if (q && !entityName(r).toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, search, level, channel]);
+  }, [baseRows, search, channel]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
     const dir = sortDir === "asc" ? 1 : -1;
+    const accessor: Record<SortKey, (r: SalesDetailRow) => number | string> = {
+      name: entityName,
+      level: (r) => r.level,
+      channelName: (r) => r.channelName,
+      value: val,
+      units: units,
+      prev: prev,
+      growth: grow,
+    };
+    const get = accessor[sortKey];
     arr.sort((a, b) => {
-      if (sortKey === "name") return entityName(a).localeCompare(entityName(b)) * dir;
-      const av = a[sortKey];
-      const bv = b[sortKey];
+      const av = get(a);
+      const bv = get(b);
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
     });
     return arr;
-  }, [filtered, sortKey, sortDir]);
+  }, [filtered, sortKey, sortDir, view]);
 
   const totals = useMemo(() => {
-    const ytd = filtered.reduce((a, r) => a + (r.ytdValue || 0), 0);
-    const sply = filtered.reduce((a, r) => a + (r.splyValue || 0), 0);
-    const growth = sply > 0 ? Math.round(((ytd - sply) / sply) * 1000) / 10 : 0;
-    return { ytd, sply, growth };
-  }, [filtered]);
+    const cur = filtered.reduce((a, r) => a + (val(r) || 0), 0);
+    const pv = filtered.reduce((a, r) => a + (prev(r) || 0), 0);
+    const growth = pv > 0 ? Math.round(((cur - pv) / pv) * 1000) / 10 : 0;
+    return { cur, pv, growth };
+  }, [filtered, view]);
 
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir(key === "name" || key === "channelName" ? "asc" : "desc"); }
+  function toggleSort(key: string) {
+    const k = key as SortKey;
+    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(k); setSortDir(k === "name" || k === "channelName" || k === "level" ? "asc" : "desc"); }
   }
+
+  const valLabel = view === "ytd" ? "YTD Value" : "MTD Value";
+  const unitsLabel = view === "ytd" ? "YTD Units" : "MTD Units";
+  const prevLabel = view === "ytd" ? "SPLY Value" : "PY MTD Value";
+  const colLabel = (key: SortKey, fallback: string) =>
+    key === "value" ? valLabel : key === "units" ? unitsLabel : key === "prev" ? prevLabel : fallback;
 
   if (loading || !user) return null;
 
   return (
     <PermissionGate permission="view_sales">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[var(--color-dark)]">Sales</h1>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Year-to-date sales vs same period last year (SPLY){period ? ` · ${period}` : ""}
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--color-dark)]">Sales</h1>
+          <p className="text-sm text-[var(--color-text-muted)] mt-1">
+            {view === "ytd"
+              ? "Year-to-date sales vs same period last year (SPLY)"
+              : "Month-to-date sales vs this month last year (TMLY)"}
+            {period ? ` · ${period}` : ""}
+          </p>
+        </div>
+        <div className="inline-flex rounded-lg border border-[var(--color-border)] overflow-hidden">
+          {(["ytd", "mtd"] as View[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`px-4 py-2 text-sm font-medium ${
+                view === v ? "bg-[var(--color-primary)] text-white" : "bg-white text-[var(--color-text)]"
+              }`}
+            >
+              {v.toUpperCase()}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-        <StatCard label="YTD Sales" value={rand(totals.ytd)} />
-        <StatCard label="SPLY Sales" value={rand(totals.sply)} />
+        <StatCard label={valLabel} value={rand(totals.cur)} />
+        <StatCard label={prevLabel} value={rand(totals.pv)} />
         <StatCard label="Growth" value={`${totals.growth}%`} accent={totals.growth >= 0 ? "pos" : "neg"} />
       </div>
 
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search channel / store / product…"
+          placeholder="Search store / product…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
-        <select value={level} onChange={(e) => setLevel(e.target.value as Level)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
-          <option value="all">All levels</option>
-          <option value="channel">Channel</option>
-          <option value="store">Store</option>
-          <option value="product">Product</option>
-        </select>
         <select value={channel} onChange={(e) => setChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All channels</option>
           {channels.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -131,36 +182,37 @@ export default function SalesPage() {
       ) : rows.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-xl border border-[var(--color-border)]">
           <p className="text-[var(--color-text-muted)]">
-            No sales detail for {period || "this period"} yet. The detailed sales query is being
-            finalised — once it&apos;s wired into the sync, data will appear here automatically.
+            No sales detail for {period || "this period"} yet. Run a sync in Control Centre &rarr; Data Sync.
           </p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
           <div className="overflow-x-auto max-h-[70vh]">
-            <table className="w-full text-sm">
+            <table className="text-sm" style={{ tableLayout: "fixed", width: totalWidth(COLS.map((c) => c.key)), minWidth: "100%" }}>
+              <colgroup>
+                {COLS.map((c) => <col key={c.key} style={{ width: widths[c.key] }} />)}
+              </colgroup>
               <thead className="sticky top-0 bg-[var(--color-bg)] z-10">
                 <tr className="text-left text-[var(--color-text-muted)]">
-                  <Th label="Entity" k="name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                  <th className="px-3 py-2 font-semibold">Level</th>
-                  <Th label="Channel" k="channelName" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                  <Th label="YTD Value" k="ytdValue" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
-                  <Th label="YTD Units" k="ytdUnits" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
-                  <Th label="SPLY Value" k="splyValue" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
-                  <Th label="Growth" k="growthPercent" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
+                  {COLS.map((c) => (
+                    <Th key={c.key} label={colLabel(c.key, c.label)} colKey={c.key} align={c.align}
+                      sortKey={sortKey} sortDir={sortDir}
+                      onSort={c.sortable === false ? undefined : toggleSort}
+                      onResize={startResize(c.key)} />
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((r, i) => (
                   <tr key={`${r.level}|${entityName(r)}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
-                    <td className="px-3 py-2 font-medium text-[var(--color-text)]">{entityName(r)}</td>
+                    <td className="px-3 py-2 font-medium text-[var(--color-text)] truncate">{entityName(r)}</td>
                     <td className="px-3 py-2 text-[var(--color-text-muted)] capitalize">{r.level}</td>
-                    <td className="px-3 py-2 text-[var(--color-text)]">{r.channelName || "—"}</td>
-                    <td className="px-3 py-2 text-right text-[var(--color-text)]">{rand(r.ytdValue)}</td>
-                    <td className="px-3 py-2 text-right text-[var(--color-text)]">{(r.ytdUnits || 0).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right text-[var(--color-text)]">{rand(r.splyValue)}</td>
-                    <td className={`px-3 py-2 text-right font-medium ${(r.growthPercent ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {r.growthPercent != null ? `${r.growthPercent}%` : "—"}
+                    <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.channelName || "—"}</td>
+                    <td className="px-3 py-2 text-right text-[var(--color-text)]">{rand(val(r))}</td>
+                    <td className="px-3 py-2 text-right text-[var(--color-text)]">{(units(r) || 0).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right text-[var(--color-text)]">{rand(prev(r))}</td>
+                    <td className={`px-3 py-2 text-right font-medium ${(grow(r) ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {grow(r) != null ? `${grow(r)}%` : "—"}
                     </td>
                   </tr>
                 ))}
@@ -168,7 +220,7 @@ export default function SalesPage() {
             </table>
           </div>
           <div className="px-3 py-2 text-xs text-[var(--color-text-muted)] border-t border-[var(--color-border)]">
-            Showing {sorted.length.toLocaleString()} of {rows.length.toLocaleString()} rows
+            Showing {sorted.length.toLocaleString()} of {baseRows.length.toLocaleString()} rows
           </div>
         </div>
       )}
@@ -183,19 +235,5 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
       <div className="text-xs text-[var(--color-text-muted)] mt-1">{label}</div>
     </div>
-  );
-}
-
-function Th({
-  label, k, sortKey, sortDir, onSort, align = "left",
-}: {
-  label: string; k: SortKey; sortKey: SortKey; sortDir: "asc" | "desc"; onSort: (k: SortKey) => void; align?: "left" | "right" | "center";
-}) {
-  const active = sortKey === k;
-  return (
-    <th onClick={() => onSort(k)} className={`px-3 py-2 font-semibold cursor-pointer select-none whitespace-nowrap ${align === "right" ? "text-right" : "text-left"}`}>
-      {label}
-      <span className="ml-1 text-[10px]">{active ? (sortDir === "asc" ? "▲" : "▼") : ""}</span>
-    </th>
   );
 }

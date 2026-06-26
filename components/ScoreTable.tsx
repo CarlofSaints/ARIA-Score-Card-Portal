@@ -159,10 +159,10 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
               {scores.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-12 text-center text-[var(--color-text-muted)]"
                   >
-                    No data available. Seed mock data from the Control Centre or connect to SQL Server.
+                    No scores yet. Run a sync from the Control Centre, then set KPI weightings and points brackets.
                   </td>
                 </tr>
               )}

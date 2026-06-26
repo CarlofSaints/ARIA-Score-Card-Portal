@@ -4,6 +4,9 @@ import type {
   EntityScore,
   SalesData,
   KpiKey,
+  ScoreBracket,
+  KpiScoringConfig,
+  SalesGrowthMetric,
 } from "./types";
 
 /**
@@ -76,6 +79,97 @@ export function calcSalesPerformance(data: SalesData): number {
     return Math.max(0, Math.min(100, 50 + growth / 2));
   }
   return 50; // no comparison data → neutral score
+}
+
+// ── Bracket-based scoring (current model) ────────────────────────────────────
+
+/**
+ * Award points for a metric value using the KPI's configured brackets. The
+ * first bracket whose [min, max] contains the value wins (brackets are stored
+ * low→high). Points are clamped to [0, weight] so a KPI can never contribute
+ * more than its weight (the points pool). Returns 0 when no bracket matches.
+ */
+export function pointsForValue(
+  value: number,
+  brackets: ScoreBracket[],
+  weight: number
+): number {
+  for (const b of brackets) {
+    if (value >= b.min && value <= b.max) {
+      return Math.max(0, Math.min(b.points, weight));
+    }
+  }
+  return 0;
+}
+
+/**
+ * Compute the sales growth % for the selected metric, or null when the prior
+ * value is missing/zero (no meaningful growth → caller scores it 0).
+ *  - ytd_vs_ytd : YTD vs PY YTD
+ *  - tm_vs_tmly : MTD vs PY MTD (this month vs same month last year)
+ *  - tm_vs_lm   : MTD vs last calendar month — inert until GetSales_PNP returns LM
+ */
+export function salesGrowthPercent(
+  sd: SalesData | undefined,
+  metric: SalesGrowthMetric
+): number | null {
+  if (!sd) return null;
+  const pct = (cur: number | undefined, prev: number | undefined): number | null =>
+    prev && prev > 0 ? Math.round((((cur ?? 0) - prev) / prev) * 1000) / 10 : null;
+  if (metric === "tm_vs_tmly") return pct(sd.mtdValue, sd.pyMtdValue);
+  if (metric === "tm_vs_lm") return pct(sd.mtdValue, sd.lastMonthValue);
+  return pct(sd.salesValue, sd.previousPeriodSalesValue);
+}
+
+/**
+ * Build an entity's full score from its KPI metric percentages and the tenant's
+ * weightings + bracket config. `percents` carries the display metric for each
+ * KPI (sales = growth %, ND/Phantom/OOS = the level %); null means "no data" and
+ * scores 0. maxScore per KPI = its weight, so maxPossibleScore = sum of weights.
+ */
+export function buildEntityScore(params: {
+  entityId: string;
+  entityName: string;
+  entityType: EntityScore["entityType"];
+  period: string;
+  percents: Record<KpiKey, number | null>;
+  weightings: KpiWeighting[];
+  scoring: KpiScoringConfig[];
+}): EntityScore {
+  const keys: KpiKey[] = [
+    "sales_growth",
+    "phantom_inventory",
+    "numerical_distribution",
+    "oos",
+  ];
+
+  const kpiScores: KpiScore[] = keys.map((key) => {
+    const weight = params.weightings.find((w) => w.key === key)?.weight ?? 0;
+    const brackets = params.scoring.find((s) => s.key === key)?.brackets ?? [];
+    const percent = params.percents[key];
+    const score =
+      percent === null ? 0 : pointsForValue(percent, brackets, weight);
+    return {
+      kpiKey: key,
+      rawValue: weight > 0 ? Math.round((score / weight) * 1000) / 10 : 0,
+      percent: percent === null ? undefined : percent,
+      score: Math.round(score * 10) / 10,
+      maxScore: weight,
+    };
+  });
+
+  const totalScore = kpiScores.reduce((sum, k) => sum + k.score, 0);
+  const maxPossibleScore = kpiScores.reduce((sum, k) => sum + k.maxScore, 0);
+
+  return {
+    entityId: params.entityId,
+    entityName: params.entityName,
+    entityType: params.entityType,
+    period: params.period,
+    kpiScores,
+    totalScore: Math.round(totalScore * 10) / 10,
+    maxPossibleScore,
+  };
 }
 
 /**

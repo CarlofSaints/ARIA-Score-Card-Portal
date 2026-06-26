@@ -5,7 +5,19 @@ import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import { useTenant } from "@/contexts/TenantContext";
 import { KPI_DEFS, MODULE_DEFS } from "@/lib/modules";
-import type { KpiWeighting } from "@/lib/types";
+import type {
+  KpiWeighting,
+  KpiScoringConfig,
+  KpiKey,
+  ScoreBracket,
+  SalesGrowthMetric,
+} from "@/lib/types";
+
+const GROWTH_METRICS: { value: SalesGrowthMetric; label: string; disabled?: boolean }[] = [
+  { value: "ytd_vs_ytd", label: "YTD vs YTD (year-to-date vs last year)" },
+  { value: "tm_vs_tmly", label: "TM vs TMLY (this month vs same month last year)" },
+  { value: "tm_vs_lm", label: "TM vs LM (this month vs last month) — pending data", disabled: true },
+];
 
 interface SyncMeta {
   lastSync?: string;
@@ -29,6 +41,7 @@ export default function ControlCentrePage() {
   const tenant = useTenant();
 
   const [weightings, setWeightings] = useState<KpiWeighting[]>([]);
+  const [scoring, setScoring] = useState<KpiScoringConfig[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -64,6 +77,11 @@ export default function ControlCentrePage() {
       authFetch("/api/kpi-weightings")
         .then((r) => r.json())
         .then((data) => setWeightings(data.weightings || []))
+        .catch(() => {});
+
+      authFetch("/api/kpi-scoring")
+        .then((r) => r.json())
+        .then((data) => setScoring(data.scoring || []))
         .catch(() => {});
 
       authFetch("/api/sync")
@@ -102,6 +120,45 @@ export default function ControlCentrePage() {
 
   const totalWeight = weightings.reduce((sum, w) => sum + w.weight, 0);
 
+  // ── Scoring (points brackets) helpers ──
+  function scoringFor(key: KpiKey): KpiScoringConfig {
+    return (
+      scoring.find((s) => s.key === key) || { key, brackets: [] }
+    );
+  }
+
+  function updateScoring(key: KpiKey, next: Partial<KpiScoringConfig>) {
+    setScoring((prev) => {
+      const exists = prev.some((s) => s.key === key);
+      const base = exists
+        ? prev
+        : [...prev, { key, brackets: [] } as KpiScoringConfig];
+      return base.map((s) => (s.key === key ? { ...s, ...next } : s));
+    });
+  }
+
+  function updateBracket(key: KpiKey, idx: number, field: keyof ScoreBracket, value: number) {
+    const cfg = scoringFor(key);
+    const brackets = cfg.brackets.map((b, i) =>
+      i === idx ? { ...b, [field]: value } : b
+    );
+    updateScoring(key, { brackets });
+  }
+
+  function addBracket(key: KpiKey) {
+    const cfg = scoringFor(key);
+    const last = cfg.brackets[cfg.brackets.length - 1];
+    const newBracket: ScoreBracket = last
+      ? { min: last.max, max: last.max + 10, points: last.points }
+      : { min: 0, max: 100, points: 0 };
+    updateScoring(key, { brackets: [...cfg.brackets, newBracket] });
+  }
+
+  function removeBracket(key: KpiKey, idx: number) {
+    const cfg = scoringFor(key);
+    updateScoring(key, { brackets: cfg.brackets.filter((_, i) => i !== idx) });
+  }
+
   async function handleSave() {
     setMessage("");
     if (totalWeight !== 100) {
@@ -110,12 +167,21 @@ export default function ControlCentrePage() {
     }
     setSaving(true);
     try {
-      const res = await authFetch("/api/kpi-weightings", {
-        method: "PUT",
-        body: JSON.stringify({ weightings }),
-      });
-      if (res.ok) setMessage("Saved successfully");
-      else setMessage("Failed to save");
+      const [wRes, sRes] = await Promise.all([
+        authFetch("/api/kpi-weightings", {
+          method: "PUT",
+          body: JSON.stringify({ weightings }),
+        }),
+        authFetch("/api/kpi-scoring", {
+          method: "PUT",
+          body: JSON.stringify({ scoring }),
+        }),
+      ]);
+      if (wRes.ok && sRes.ok) setMessage("Saved successfully");
+      else {
+        const err = !sRes.ok ? await sRes.json().catch(() => ({})) : {};
+        setMessage(err.error || "Failed to save");
+      }
     } catch {
       setMessage("Network error");
     } finally {
@@ -251,10 +317,11 @@ export default function ControlCentrePage() {
       {/* KPI Weightings */}
       <section className="bg-white rounded-xl border border-[var(--color-border)] p-6 mb-6">
         <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">
-          KPI Weightings
+          KPI Weightings &amp; Points
         </h2>
         <p className="text-sm text-[var(--color-text-muted)] mb-4">
-          Adjust the point weighting for each KPI. Must total 100.
+          Each KPI&apos;s weight is its points pool (weights must total 100). Under each, define how the
+          metric % converts to points using brackets — for Sales, pick the growth metric first.
         </p>
 
         <div className="space-y-4">
@@ -282,6 +349,87 @@ export default function ControlCentrePage() {
                 <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
                   {kpi.description}
                 </p>
+
+                {/* Points brackets */}
+                <div className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-[var(--color-text)]">
+                      Points allotment ({val} pts pool)
+                    </span>
+                    <span className="text-[11px] text-[var(--color-text-muted)]">
+                      {kpi.key === "phantom_inventory" || kpi.key === "oos"
+                        ? "Lower % → more points"
+                        : "Higher % → more points"}
+                    </span>
+                  </div>
+
+                  {kpi.key === "sales_growth" && (
+                    <div className="mb-3">
+                      <label className="block text-[11px] text-[var(--color-text-muted)] mb-1">
+                        Growth metric
+                      </label>
+                      <select
+                        value={scoringFor("sales_growth").salesGrowthMetric || "ytd_vs_ytd"}
+                        onChange={(e) =>
+                          updateScoring("sales_growth", {
+                            salesGrowthMetric: e.target.value as SalesGrowthMetric,
+                          })
+                        }
+                        className="w-full px-2 py-1.5 rounded-md border border-[var(--color-border)] text-xs bg-white"
+                      >
+                        {GROWTH_METRICS.map((m) => (
+                          <option key={m.value} value={m.value} disabled={m.disabled}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    {scoringFor(kpi.key).brackets.map((b, i) => (
+                      <div key={i} className="flex items-center gap-1.5 text-xs">
+                        <input
+                          type="number"
+                          value={b.min}
+                          onChange={(e) => updateBracket(kpi.key, i, "min", Number(e.target.value))}
+                          className="w-16 px-1.5 py-1 rounded border border-[var(--color-border)] bg-white text-right"
+                        />
+                        <span className="text-[var(--color-text-muted)]">to</span>
+                        <input
+                          type="number"
+                          value={b.max}
+                          onChange={(e) => updateBracket(kpi.key, i, "max", Number(e.target.value))}
+                          className="w-16 px-1.5 py-1 rounded border border-[var(--color-border)] bg-white text-right"
+                        />
+                        <span className="text-[var(--color-text-muted)]">% →</span>
+                        <input
+                          type="number"
+                          value={b.points}
+                          onChange={(e) => updateBracket(kpi.key, i, "points", Number(e.target.value))}
+                          className="w-16 px-1.5 py-1 rounded border border-[var(--color-border)] bg-white text-right"
+                        />
+                        <span className="text-[var(--color-text-muted)]">pts</span>
+                        <button
+                          type="button"
+                          onClick={() => removeBracket(kpi.key, i)}
+                          className="ml-auto px-1.5 py-1 rounded text-[var(--color-text-muted)] hover:bg-red-50 hover:text-red-600"
+                          aria-label="Remove bracket"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => addBracket(kpi.key)}
+                    className="mt-2 px-2.5 py-1 rounded-md border border-[var(--color-border)] bg-white text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                  >
+                    + Add bracket
+                  </button>
+                </div>
               </div>
             );
           })}

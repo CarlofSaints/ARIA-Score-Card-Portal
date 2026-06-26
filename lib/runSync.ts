@@ -90,6 +90,7 @@ export async function runSyncForTenant(
     name: st["Site Name"] || String(st.SiteID),
     channelId: st.Channel,
     channelName: st.Channel,
+    subChannel: st.SubChannel || undefined,
     region: st.Province || undefined,
     siteCode: String(st.SiteID),
   }));
@@ -168,13 +169,30 @@ export async function runSyncForTenant(
     ytdUnits: number;
     splyValue: number;
     splyUnits: number;
+    mtdValue: number;
+    mtdUnits: number;
+    pyMtdValue: number;
+    pyMtdUnits: number;
   }
-  const emptyAgg = (): SalesAgg => ({ ytdValue: 0, ytdUnits: 0, splyValue: 0, splyUnits: 0 });
+  const emptyAgg = (): SalesAgg => ({
+    ytdValue: 0,
+    ytdUnits: 0,
+    splyValue: 0,
+    splyUnits: 0,
+    mtdValue: 0,
+    mtdUnits: 0,
+    pyMtdValue: 0,
+    pyMtdUnits: 0,
+  });
   const addRow = (a: SalesAgg, r: (typeof salesRes.data)[number]) => {
     a.ytdValue += num(r["YTD Value"]);
     a.ytdUnits += num(r["YTD Units"]);
     a.splyValue += num(r["PY YTD Value"]);
     a.splyUnits += num(r["PY YTD Units"]);
+    a.mtdValue += num(r["MTD Value"]);
+    a.mtdUnits += num(r["MTD Units"]);
+    a.pyMtdValue += num(r["PY MTD Value"]);
+    a.pyMtdUnits += num(r["PY MTD Units"]);
   };
 
   const salesByChannelId = new Map<string, SalesAgg>();
@@ -224,6 +242,10 @@ export async function runSyncForTenant(
       salesUnits: a.ytdUnits,
       previousPeriodSalesValue: a.splyValue,
       previousPeriodSalesUnits: a.splyUnits,
+      mtdValue: a.mtdValue,
+      mtdUnits: a.mtdUnits,
+      pyMtdValue: a.pyMtdValue,
+      pyMtdUnits: a.pyMtdUnits,
     };
   });
 
@@ -237,6 +259,10 @@ export async function runSyncForTenant(
       salesUnits: a.ytdUnits,
       previousPeriodSalesValue: a.splyValue,
       previousPeriodSalesUnits: a.splyUnits,
+      mtdValue: a.mtdValue,
+      mtdUnits: a.mtdUnits,
+      pyMtdValue: a.pyMtdValue,
+      pyMtdUnits: a.pyMtdUnits,
     };
   });
 
@@ -250,6 +276,10 @@ export async function runSyncForTenant(
       salesUnits: a.ytdUnits,
       previousPeriodSalesValue: a.splyValue,
       previousPeriodSalesUnits: a.splyUnits,
+      mtdValue: a.mtdValue,
+      mtdUnits: a.mtdUnits,
+      pyMtdValue: a.pyMtdValue,
+      pyMtdUnits: a.pyMtdUnits,
     };
   });
 
@@ -261,6 +291,7 @@ export async function runSyncForTenant(
       level: "channel",
       entityId: ch.id,
       channelName: ch.name,
+      subChannel: "",
       siteCode: "",
       storeName: "",
       productId: "",
@@ -271,6 +302,11 @@ export async function runSyncForTenant(
       splyValue: a.splyValue,
       splyUnits: a.splyUnits,
       growthPercent: growth(a.ytdValue, a.splyValue),
+      mtdValue: a.mtdValue,
+      mtdUnits: a.mtdUnits,
+      pyMtdValue: a.pyMtdValue,
+      pyMtdUnits: a.pyMtdUnits,
+      mtdGrowthPercent: growth(a.mtdValue, a.pyMtdValue),
     });
   }
   for (const st of stores) {
@@ -279,6 +315,7 @@ export async function runSyncForTenant(
       level: "store",
       entityId: st.id,
       channelName: st.channelName,
+      subChannel: st.subChannel || "",
       siteCode: st.siteCode || st.id,
       storeName: st.name,
       productId: "",
@@ -289,6 +326,11 @@ export async function runSyncForTenant(
       splyValue: a.splyValue,
       splyUnits: a.splyUnits,
       growthPercent: growth(a.ytdValue, a.splyValue),
+      mtdValue: a.mtdValue,
+      mtdUnits: a.mtdUnits,
+      pyMtdValue: a.pyMtdValue,
+      pyMtdUnits: a.pyMtdUnits,
+      mtdGrowthPercent: growth(a.mtdValue, a.pyMtdValue),
     });
   }
   for (const p of products) {
@@ -297,6 +339,7 @@ export async function runSyncForTenant(
       level: "product",
       entityId: p.id,
       channelName: "",
+      subChannel: "",
       siteCode: "",
       storeName: "",
       productId: p.sku,
@@ -307,6 +350,11 @@ export async function runSyncForTenant(
       splyValue: a.splyValue,
       splyUnits: a.splyUnits,
       growthPercent: growth(a.ytdValue, a.splyValue),
+      mtdValue: a.mtdValue,
+      mtdUnits: a.mtdUnits,
+      pyMtdValue: a.pyMtdValue,
+      pyMtdUnits: a.pyMtdUnits,
+      mtdGrowthPercent: growth(a.mtdValue, a.pyMtdValue),
     });
   }
 
@@ -527,6 +575,7 @@ export async function runSyncForTenant(
     ndDetailRows.push({
       level: "channel",
       channelName: ch.name,
+      subChannel: "",
       siteCode: "",
       storeName: "",
       productId: "",
@@ -550,6 +599,7 @@ export async function runSyncForTenant(
     ndDetailRows.push({
       level: "store",
       channelName: st.channelName,
+      subChannel: st.subChannel || "",
       siteCode: st.siteCode || st.id,
       storeName: st.name,
       productId: "",
@@ -571,6 +621,7 @@ export async function runSyncForTenant(
     ndDetailRows.push({
       level: "product",
       channelName: "",
+      subChannel: "",
       siteCode: "",
       storeName: "",
       productId: p.sku,

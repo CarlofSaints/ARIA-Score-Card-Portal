@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import PermissionGate from "@/components/PermissionGate";
+import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { PhantomDetailRow } from "@/lib/types";
 
 type SortKey =
@@ -16,6 +17,17 @@ type SortKey =
   | "dateLastSold"
   | "ranged";
 type RangedFilter = "all" | "ranged" | "not" | "unknown";
+
+const COLS: { key: SortKey; label: string; width: number; align?: "right" | "center" }[] = [
+  { key: "storeName", label: "Store", width: 220 },
+  { key: "subChannel", label: "Sub-Channel", width: 140 },
+  { key: "productName", label: "Product", width: 300 },
+  { key: "brand", label: "Brand", width: 140 },
+  { key: "siteArticleStatus", label: "Site Status", width: 130 },
+  { key: "soh", label: "SOH", width: 80, align: "right" },
+  { key: "dateLastSold", label: "Last Sold", width: 130 },
+  { key: "ranged", label: "Ranged", width: 90, align: "center" },
+];
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -41,6 +53,10 @@ export default function PhantomStorePage() {
   const [sortKey, setSortKey] = useState<SortKey>("soh");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
+  const { widths, startResize, totalWidth } = useColumnWidths(
+    Object.fromEntries(COLS.map((c) => [c.key, c.width]))
+  );
+
   useEffect(() => {
     if (!loading && !user) router.push("/login");
   }, [loading, user, router]);
@@ -58,24 +74,28 @@ export default function PhantomStorePage() {
       .finally(() => setFetching(false));
   }, [user]);
 
+  // DC-ONLINE is excluded entirely from Phantom; DC stays in the main grid.
+  const baseRows = useMemo(
+    () => rows.filter((r) => (r.subChannel || "").toUpperCase() !== "DC-ONLINE"),
+    [rows]
+  );
+
   const brands = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.brand).filter(Boolean))).sort(),
-    [rows]
+    () => Array.from(new Set(baseRows.map((r) => r.brand).filter(Boolean))).sort(),
+    [baseRows]
   );
-
   const channels = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.channelName).filter(Boolean))).sort(),
-    [rows]
+    () => Array.from(new Set(baseRows.map((r) => r.channelName).filter(Boolean))).sort(),
+    [baseRows]
   );
-
   const subChannels = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.subChannel).filter(Boolean))).sort(),
-    [rows]
+    () => Array.from(new Set(baseRows.map((r) => r.subChannel).filter(Boolean))).sort(),
+    [baseRows]
   );
 
   const filtered = useMemo(() => {
     const q = storeSearch.trim().toLowerCase();
-    return rows.filter((r) => {
+    return baseRows.filter((r) => {
       if (q && !`${r.storeName} ${r.siteCode}`.toLowerCase().includes(q)) return false;
       if (brand !== "all" && r.brand !== brand) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
@@ -85,7 +105,7 @@ export default function PhantomStorePage() {
       if (ranged === "unknown" && r.ranged !== null) return false;
       return true;
     });
-  }, [rows, storeSearch, brand, channel, subChannel, ranged]);
+  }, [baseRows, storeSearch, brand, channel, subChannel, ranged]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -107,12 +127,12 @@ export default function PhantomStorePage() {
     return { items: filtered.length, stores: stores.size, products: prods.size, rangedCount, negSoh };
   }, [filtered]);
 
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir(key === "soh" ? "asc" : "asc");
+  function toggleSort(key: string) {
+    const k = key as SortKey;
+    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(k);
+      setSortDir("asc");
     }
   }
 
@@ -151,47 +171,19 @@ export default function PhantomStorePage() {
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
-        <select
-          value={brand}
-          onChange={(e) => setBrand(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
-        >
+        <select value={brand} onChange={(e) => setBrand(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All brands</option>
-          {brands.map((b) => (
-            <option key={b} value={b}>
-              {b}
-            </option>
-          ))}
+          {brands.map((b) => <option key={b} value={b}>{b}</option>)}
         </select>
-        <select
-          value={channel}
-          onChange={(e) => setChannel(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
-        >
+        <select value={channel} onChange={(e) => setChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All channels</option>
-          {channels.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
+          {channels.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select
-          value={subChannel}
-          onChange={(e) => setSubChannel(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
-        >
+        <select value={subChannel} onChange={(e) => setSubChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All sub-channels</option>
-          {subChannels.map((sc) => (
-            <option key={sc} value={sc}>
-              {sc}
-            </option>
-          ))}
+          {subChannels.map((sc) => <option key={sc} value={sc}>{sc}</option>)}
         </select>
-        <select
-          value={ranged}
-          onChange={(e) => setRanged(e.target.value as RangedFilter)}
-          className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
-        >
+        <select value={ranged} onChange={(e) => setRanged(e.target.value as RangedFilter)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All ranging</option>
           <option value="ranged">Ranged</option>
           <option value="not">Not ranged</option>
@@ -211,46 +203,35 @@ export default function PhantomStorePage() {
       ) : (
         <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
           <div className="overflow-x-auto max-h-[70vh]">
-            <table className="w-full text-sm">
+            <table className="text-sm" style={{ tableLayout: "fixed", width: totalWidth(COLS.map((c) => c.key)), minWidth: "100%" }}>
+              <colgroup>
+                {COLS.map((c) => <col key={c.key} style={{ width: widths[c.key] }} />)}
+              </colgroup>
               <thead className="sticky top-0 bg-[var(--color-bg)] z-10">
                 <tr className="text-left text-[var(--color-text-muted)]">
-                  <Th label="Store" k="storeName" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                  <Th label="Sub-Channel" k="subChannel" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                  <Th label="Product" k="productName" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                  <Th label="Brand" k="brand" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                  <Th label="Site Status" k="siteArticleStatus" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                  <Th label="SOH" k="soh" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="right" />
-                  <Th label="Last Sold" k="dateLastSold" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                  <Th label="Ranged" k="ranged" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} align="center" />
+                  {COLS.map((c) => (
+                    <Th key={c.key} label={c.label} colKey={c.key} align={c.align} sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} onResize={startResize(c.key)} />
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((r, i) => (
-                  <tr
-                    key={`${r.siteCode}|${r.productId}|${i}`}
-                    className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]"
-                  >
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-[var(--color-text)]">{r.storeName}</div>
+                  <tr key={`${r.siteCode}|${r.productId}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
+                    <td className="px-3 py-2 overflow-hidden">
+                      <div className="font-medium text-[var(--color-text)] truncate">{r.storeName}</div>
                       <div className="text-xs text-[var(--color-text-muted)]">{r.siteCode}</div>
                     </td>
-                    <td className="px-3 py-2 text-[var(--color-text)]">{r.subChannel || "—"}</td>
-                    <td className="px-3 py-2">
-                      <div className="text-[var(--color-text)]">{r.productName}</div>
-                      <div className="text-xs text-[var(--color-text-muted)]">{r.channelArticle}</div>
+                    <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.subChannel || "—"}</td>
+                    <td className="px-3 py-2 overflow-hidden">
+                      <div className="text-[var(--color-text)] truncate">{r.productName}</div>
+                      <div className="text-xs text-[var(--color-text-muted)] truncate">{r.channelArticle}</div>
                     </td>
-                    <td className="px-3 py-2 text-[var(--color-text)]">{r.brand || "—"}</td>
-                    <td className="px-3 py-2 text-[var(--color-text)]">{r.siteArticleStatus || "—"}</td>
-                    <td
-                      className={`px-3 py-2 text-right font-medium ${
-                        r.soh <= 0 ? "text-red-600" : "text-[var(--color-text)]"
-                      }`}
-                    >
+                    <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.brand || "—"}</td>
+                    <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.siteArticleStatus || "—"}</td>
+                    <td className={`px-3 py-2 text-right font-medium ${r.soh <= 0 ? "text-red-600" : "text-[var(--color-text)]"}`}>
                       {r.soh}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-[var(--color-text)]">
-                      {formatDate(r.dateLastSold)}
-                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-[var(--color-text)]">{formatDate(r.dateLastSold)}</td>
                     <td className="px-3 py-2 text-center">
                       <RangedBadge ranged={r.ranged} />
                     </td>
@@ -260,7 +241,7 @@ export default function PhantomStorePage() {
             </table>
           </div>
           <div className="px-3 py-2 text-xs text-[var(--color-text-muted)] border-t border-[var(--color-border)]">
-            Showing {sorted.length.toLocaleString()} of {rows.length.toLocaleString()} phantom items
+            Showing {sorted.length.toLocaleString()} of {baseRows.length.toLocaleString()} phantom items
           </div>
         </div>
       )}
@@ -277,45 +258,12 @@ function StatCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function Th({
-  label,
-  k,
-  sortKey,
-  sortDir,
-  onSort,
-  align = "left",
-}: {
-  label: string;
-  k: SortKey;
-  sortKey: SortKey;
-  sortDir: "asc" | "desc";
-  onSort: (k: SortKey) => void;
-  align?: "left" | "right" | "center";
-}) {
-  const active = sortKey === k;
-  return (
-    <th
-      onClick={() => onSort(k)}
-      className={`px-3 py-2 font-semibold cursor-pointer select-none whitespace-nowrap ${
-        align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"
-      }`}
-    >
-      {label}
-      <span className="ml-1 text-[10px]">{active ? (sortDir === "asc" ? "▲" : "▼") : ""}</span>
-    </th>
-  );
-}
-
 function RangedBadge({ ranged }: { ranged: boolean | null }) {
   if (ranged === null)
     return <span className="text-xs text-[var(--color-text-muted)]">—</span>;
   return ranged ? (
-    <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-      Yes
-    </span>
+    <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">Yes</span>
   ) : (
-    <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
-      No
-    </span>
+    <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">No</span>
   );
 }

@@ -82,6 +82,33 @@ export interface KpiWeighting {
   weight: number; // 0–100, all weights should sum to 100
 }
 
+// ── KPI scoring (how a KPI's % maps to points) ──
+// The KPI weight is the points pool for that KPI. Brackets define how the
+// metric % converts to points (0..weight). One config per KPI, applied to every
+// scorecard level (channel/store/product/CAM).
+
+// Sales is the only KPI scored on a period-over-period growth metric; the other
+// three are point-in-time levels. "tm_vs_lm" needs last-month data that
+// GetSales_PNP does not yet return — it is inert (neutral) until the SP is
+// extended (pending Mark).
+export type SalesGrowthMetric = "ytd_vs_ytd" | "tm_vs_tmly" | "tm_vs_lm";
+
+export interface ScoreBracket {
+  min: number; // inclusive lower bound of the metric % (e.g. growth % or KPI %)
+  max: number; // inclusive upper bound
+  points: number; // points awarded when the metric falls in [min, max]
+}
+
+export interface KpiScoringConfig {
+  key: KpiKey;
+  // Brackets ordered low→high; the first bracket whose [min,max] contains the
+  // value wins. For ND, higher % → more points; for Phantom/OOS, lower % → more
+  // points (the admin encodes this directly in the bracket points).
+  brackets: ScoreBracket[];
+  // Sales only: which growth metric the brackets are evaluated against.
+  salesGrowthMetric?: SalesGrowthMetric;
+}
+
 // ── Tenant Config ──
 
 export interface TenantBranding {
@@ -186,6 +213,7 @@ export interface ScorecardStore {
   name: string;
   channelId: string;
   channelName: string;
+  subChannel?: string; // CORP/HYPER/FRANCHISE/DC/DC-ONLINE… (from store master SubChannel)
   region?: string;
   siteCode?: string; // SQL SiteCode (e.g. "PNP-HC14") — used to map SP rows keyed by SiteCode
 }
@@ -225,10 +253,16 @@ export interface SalesData {
   entityId: string;
   entityType: "channel" | "store" | "product";
   period: string; // "YYYY-MM"
-  salesValue: number;
-  salesUnits: number;
-  previousPeriodSalesValue?: number;
-  previousPeriodSalesUnits?: number;
+  salesValue: number; // YTD value
+  salesUnits: number; // YTD units
+  previousPeriodSalesValue?: number; // PY YTD value (SPLY)
+  previousPeriodSalesUnits?: number; // PY YTD units
+  mtdValue?: number; // this-month-to-date value
+  mtdUnits?: number; // this-month-to-date units
+  pyMtdValue?: number; // prior-year same-month-to-date value (TMLY)
+  pyMtdUnits?: number; // prior-year same-month-to-date units
+  lastMonthValue?: number; // previous calendar month value (LM) — pending SP support
+  lastMonthUnits?: number; // previous calendar month units — pending SP support
   target?: number;
 }
 
@@ -345,6 +379,7 @@ export interface OosDetailRow {
 export interface NdDetailRow {
   level: "channel" | "store" | "product";
   channelName: string;
+  subChannel: string; // store-level sub-channel (DC/DC-ONLINE/CORP…); "" for channel/product level
   siteCode: string; // "" for channel/product level
   storeName: string; // "" for channel/product level
   productId: string; // "" for channel/store level
@@ -359,6 +394,7 @@ export interface SalesDetailRow {
   level: "channel" | "store" | "product";
   entityId: string;
   channelName: string;
+  subChannel: string; // store-level sub-channel; "" for channel/product level
   siteCode: string; // "" for channel/product level
   storeName: string; // "" for channel/product level
   productId: string; // "" for channel/store level
@@ -366,9 +402,14 @@ export interface SalesDetailRow {
   brand: string;
   ytdValue: number;
   ytdUnits: number;
-  splyValue: number; // same-period-last-year
+  splyValue: number; // PY YTD value (same-period-last-year)
   splyUnits: number;
   growthPercent: number; // (ytdValue - splyValue) / splyValue * 100
+  mtdValue: number; // this-month-to-date value
+  mtdUnits: number;
+  pyMtdValue: number; // prior-year same-month-to-date value
+  pyMtdUnits: number;
+  mtdGrowthPercent: number; // (mtdValue - pyMtdValue) / pyMtdValue * 100
 }
 
 // ── Ranging (denominator source — uploaded Range Management workbook) ──
