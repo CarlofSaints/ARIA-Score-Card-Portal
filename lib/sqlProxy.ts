@@ -360,3 +360,18 @@ export async function getGameSales(client: string) {
 export async function getMakroSales(client: string) {
   return sqlQuery<SqlSalesPnpRow>("sales_makro", { client });
 }
+
+// ── MASSBUILD / GAME / MAKRO — Out of Stock (pool2 / .2 server) ───────────────
+// Same row shape as the PnP OOS SP (Channel = the channel name). These channels
+// DO have OOS (unlike SPAR), so they score Sales + OOS (ND/Phantom redistribute).
+export async function getMassbuildOos(client: string) {
+  return sqlQuery<SqlOosPnpRow>("oos_massbuild", { client });
+}
+
+export async function getGameOos(client: string) {
+  return sqlQuery<SqlOosPnpRow>("oos_game", { client });
+}
+
+export async function getMakroOos(client: string) {
+  return sqlQuery<SqlOosPnpRow>("oos_makro", { client });
+}

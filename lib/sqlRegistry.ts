@@ -346,6 +346,48 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     sql: "EXEC [GetDataForCustomDev_PNP_OutOfStock] @client\n-- returns OOS site-SKUs incl. Date, [Site Article Status], LatestSOH (currently unused by the OOS page).",
     usedBy: "Sync → oos/<period>/detail.json + kpi/<period>/oos-*.json; OOS page, scorecards",
   },
+  {
+    name: "oos_massbuild",
+    label: "Out of Stock — MASSBUILD/Builders (Stored Procedure)",
+    category: "Out of Stocks",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "MASSBUILD (Builders) out-of-stock, same row shape as PnP OOS (Channel = MASSBUILD). Runs on pool2 (.2). ⚠ the SP reads database DataOrbisSAMS — the proxy login (ClaudeCodeCarl) needs ACCESS to DataOrbisSAMS (not just EXECUTE on the SP). Merged with PnP OOS in the sync.",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [dbo].[GetDataForCustomDev_MASSBUILD_OutOfStock] @ClientName = @client",
+    usedBy: "Sync → oos/<period>/* (merged); OOS page, scorecards",
+  },
+  {
+    name: "oos_game",
+    label: "Out of Stock — GAME (Stored Procedure)",
+    category: "Out of Stocks",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "GAME out-of-stock, same row shape as PnP OOS (Channel = GAME). Runs on pool2 (.2). ⚠ reads DataOrbisSAMS — proxy login needs access to that database. Merged with PnP OOS in the sync.",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [dbo].[GetDataForCustomDev_GAME_OutOfStock] @ClientName = @client",
+    usedBy: "Sync → oos/<period>/* (merged); OOS page, scorecards",
+  },
+  {
+    name: "oos_makro",
+    label: "Out of Stock — MAKRO (Stored Procedure)",
+    category: "Out of Stocks",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "MAKRO out-of-stock, same row shape as PnP OOS (Channel = MAKRO). Runs on pool2 (.2). ⚠ reads DataOrbisSAMS — proxy login needs access to that database. Merged with PnP OOS in the sync.",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [dbo].[GetDataForCustomDev_MAKRO_OutOfStock] @ClientName = @client",
+    usedBy: "Sync → oos/<period>/* (merged); OOS page, scorecards",
+  },
 
   // ── Phantom Stock ──────────────────────────────────────────────────
   {

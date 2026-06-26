@@ -12,6 +12,9 @@ import {
   getGameSales,
   getMakroSales,
   getOosPnp,
+  getMassbuildOos,
+  getGameOos,
+  getMakroOos,
   getNdPnp,
   getSparNd,
   getPhantomStockPnp,
@@ -119,9 +122,12 @@ export async function runSyncForTenant(
   // others or breaks the sync.
   const salesErrors: string[] = [];
   const ndErrors: string[] = [];
-  const okFlags = { salesPnp: true, salesSpar: true, salesMass: true, salesGame: true, salesMakro: true, ndPnp: true, ndSpar: true };
-  let oosOk = true;
-  let oosError = "";
+  const oosErrors: string[] = [];
+  const okFlags = {
+    salesPnp: true, salesSpar: true, salesMass: true, salesGame: true, salesMakro: true,
+    ndPnp: true, ndSpar: true,
+    oosPnp: true, oosMass: true, oosGame: true, oosMakro: true,
+  };
   let phantomOk = true;
   let phantomError = "";
   const guard = (label: string, log: string[], onFail: () => void) => (e: unknown) => {
@@ -136,7 +142,10 @@ export async function runSyncForTenant(
     salesMassRes,
     salesGameRes,
     salesMakroRes,
-    oosRes,
+    oosPnpRes,
+    oosMassRes,
+    oosGameRes,
+    oosMakroRes,
     ndPnpRes,
     ndSparRes,
     phantomRes,
@@ -147,11 +156,10 @@ export async function runSyncForTenant(
     getMassbuildSales(client).catch(guard("MASSBUILD", salesErrors, () => (okFlags.salesMass = false))),
     getGameSales(client).catch(guard("GAME", salesErrors, () => (okFlags.salesGame = false))),
     getMakroSales(client).catch(guard("MAKRO", salesErrors, () => (okFlags.salesMakro = false))),
-    getOosPnp(client).catch((e) => {
-      oosOk = false;
-      oosError = e instanceof Error ? e.message : String(e);
-      return { data: [], count: 0 };
-    }),
+    getOosPnp(client).catch(guard("PnP", oosErrors, () => (okFlags.oosPnp = false))),
+    getMassbuildOos(client).catch(guard("MASSBUILD", oosErrors, () => (okFlags.oosMass = false))),
+    getGameOos(client).catch(guard("GAME", oosErrors, () => (okFlags.oosGame = false))),
+    getMakroOos(client).catch(guard("MAKRO", oosErrors, () => (okFlags.oosMakro = false))),
     getNdPnp(client, ndRollingDays).catch(guard("PnP", ndErrors, () => (okFlags.ndPnp = false))),
     getSparNd(client, ndRollingDays).catch(guard("SPAR", ndErrors, () => (okFlags.ndSpar = false))),
     getPhantomStockPnp(client, phantomDays).catch((e) => {
@@ -174,13 +182,23 @@ export async function runSyncForTenant(
     ],
   };
   const ndRes = { data: [...ndPnpRes.data, ...ndSparRes.data] };
-  // Sales/ND are written if ANY channel returned data (so one channel's failure
-  // never wipes the others).
+  const oosRes = {
+    data: [
+      ...oosPnpRes.data,
+      ...oosMassRes.data,
+      ...oosGameRes.data,
+      ...oosMakroRes.data,
+    ],
+  };
+  // Sales/ND/OOS are written if ANY channel returned data (so one channel's
+  // failure never wipes the others).
   const salesOk =
     okFlags.salesPnp || okFlags.salesSpar || okFlags.salesMass || okFlags.salesGame || okFlags.salesMakro;
   const ndOk = okFlags.ndPnp || okFlags.ndSpar;
+  const oosOk = okFlags.oosPnp || okFlags.oosMass || okFlags.oosGame || okFlags.oosMakro;
   const salesError = salesErrors.join(" | ");
   const ndError = ndErrors.join(" | ");
+  const oosError = oosErrors.join(" | ");
   const salesPnpOk = okFlags.salesPnp;
   const salesSparOk = okFlags.salesSpar;
   const ndPnpOk = okFlags.ndPnp;
@@ -815,6 +833,10 @@ export async function runSyncForTenant(
   syncMeta.salesError = salesError;
   if (oosOk) syncMeta.oosDetailCount = oosDetailRows.length;
   syncMeta.oosOk = oosOk;
+  syncMeta.oosPnpOk = okFlags.oosPnp;
+  syncMeta.oosMassbuildOk = okFlags.oosMass;
+  syncMeta.oosGameOk = okFlags.oosGame;
+  syncMeta.oosMakroOk = okFlags.oosMakro;
   syncMeta.oosError = oosError;
   if (ndOk) syncMeta.ndDetailCount = ndDetailRows.length;
   syncMeta.ndOk = ndOk;
