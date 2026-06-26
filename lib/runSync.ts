@@ -8,6 +8,9 @@ import {
   getClientBrands,
   getSalesPnp,
   getSparSales,
+  getMassbuildSales,
+  getGameSales,
+  getMakroSales,
   getOosPnp,
   getNdPnp,
   getSparNd,
@@ -111,60 +114,77 @@ export async function runSyncForTenant(
   // NOT overwrite previously-synced data with an empty set. Sales and ND are now
   // multi-channel: PnP (pool2) + SPAR (primary) run in parallel and their rows
   // are merged. SPAR has no SOH → no SPAR OOS/Phantom.
-  let salesPnpOk = true;
-  let salesSparOk = true;
-  let salesError = "";
+  // Per-source success flags + a shared error log. A guarded fetch records its
+  // own failure so a single channel's SP (denied / timed out) never wipes the
+  // others or breaks the sync.
+  const salesErrors: string[] = [];
+  const ndErrors: string[] = [];
+  const okFlags = { salesPnp: true, salesSpar: true, salesMass: true, salesGame: true, salesMakro: true, ndPnp: true, ndSpar: true };
   let oosOk = true;
   let oosError = "";
-  let ndPnpOk = true;
-  let ndSparOk = true;
-  let ndError = "";
   let phantomOk = true;
   let phantomError = "";
+  const guard = (label: string, log: string[], onFail: () => void) => (e: unknown) => {
+    onFail();
+    log.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+    return { data: [], count: 0 };
+  };
 
-  const [salesPnpRes, salesSparRes, oosRes, ndPnpRes, ndSparRes, phantomRes, brandsRes] =
-    await Promise.all([
-      getSalesPnp(client).catch((e) => {
-        salesPnpOk = false;
-        salesError = e instanceof Error ? e.message : String(e);
-        return { data: [], count: 0 };
-      }),
-      getSparSales(client).catch((e) => {
-        salesSparOk = false;
-        salesError = (salesError ? salesError + " | " : "") + "SPAR: " + (e instanceof Error ? e.message : String(e));
-        return { data: [], count: 0 };
-      }),
-      getOosPnp(client).catch((e) => {
-        oosOk = false;
-        oosError = e instanceof Error ? e.message : String(e);
-        return { data: [], count: 0 };
-      }),
-      getNdPnp(client, ndRollingDays).catch((e) => {
-        ndPnpOk = false;
-        ndError = e instanceof Error ? e.message : String(e);
-        return { data: [], count: 0 };
-      }),
-      getSparNd(client, ndRollingDays).catch((e) => {
-        ndSparOk = false;
-        ndError = (ndError ? ndError + " | " : "") + "SPAR: " + (e instanceof Error ? e.message : String(e));
-        return { data: [], count: 0 };
-      }),
-      getPhantomStockPnp(client, phantomDays).catch((e) => {
-        phantomOk = false;
-        phantomError = e instanceof Error ? e.message : String(e);
-        return { data: [], count: 0 };
-      }),
-      getClientBrands(client).catch(() => ({ data: [], count: 0 })),
-    ]);
+  const [
+    salesPnpRes,
+    salesSparRes,
+    salesMassRes,
+    salesGameRes,
+    salesMakroRes,
+    oosRes,
+    ndPnpRes,
+    ndSparRes,
+    phantomRes,
+    brandsRes,
+  ] = await Promise.all([
+    getSalesPnp(client).catch(guard("PnP", salesErrors, () => (okFlags.salesPnp = false))),
+    getSparSales(client).catch(guard("SPAR", salesErrors, () => (okFlags.salesSpar = false))),
+    getMassbuildSales(client).catch(guard("MASSBUILD", salesErrors, () => (okFlags.salesMass = false))),
+    getGameSales(client).catch(guard("GAME", salesErrors, () => (okFlags.salesGame = false))),
+    getMakroSales(client).catch(guard("MAKRO", salesErrors, () => (okFlags.salesMakro = false))),
+    getOosPnp(client).catch((e) => {
+      oosOk = false;
+      oosError = e instanceof Error ? e.message : String(e);
+      return { data: [], count: 0 };
+    }),
+    getNdPnp(client, ndRollingDays).catch(guard("PnP", ndErrors, () => (okFlags.ndPnp = false))),
+    getSparNd(client, ndRollingDays).catch(guard("SPAR", ndErrors, () => (okFlags.ndSpar = false))),
+    getPhantomStockPnp(client, phantomDays).catch((e) => {
+      phantomOk = false;
+      phantomError = e instanceof Error ? e.message : String(e);
+      return { data: [], count: 0 };
+    }),
+    getClientBrands(client).catch(() => ({ data: [], count: 0 })),
+  ]);
 
-  // Merge PnP + SPAR rows for the multi-channel KPIs. Each row carries its own
-  // Channel, so the per-channel/store/product aggregation handles both natively.
-  const salesRes = { data: [...salesPnpRes.data, ...salesSparRes.data] };
+  // Merge all channels' rows for the multi-channel KPIs. Each row carries its
+  // own Channel, so the per-channel/store/product aggregation handles them all.
+  const salesRes = {
+    data: [
+      ...salesPnpRes.data,
+      ...salesSparRes.data,
+      ...salesMassRes.data,
+      ...salesGameRes.data,
+      ...salesMakroRes.data,
+    ],
+  };
   const ndRes = { data: [...ndPnpRes.data, ...ndSparRes.data] };
-  // Sales/ND are written if ANY of their channels returned data (so a SPAR
-  // timeout doesn't wipe PnP, and vice-versa).
-  const salesOk = salesPnpOk || salesSparOk;
-  const ndOk = ndPnpOk || ndSparOk;
+  // Sales/ND are written if ANY channel returned data (so one channel's failure
+  // never wipes the others).
+  const salesOk =
+    okFlags.salesPnp || okFlags.salesSpar || okFlags.salesMass || okFlags.salesGame || okFlags.salesMakro;
+  const ndOk = okFlags.ndPnp || okFlags.ndSpar;
+  const salesError = salesErrors.join(" | ");
+  const ndError = ndErrors.join(" | ");
+  const salesPnpOk = okFlags.salesPnp;
+  const salesSparOk = okFlags.salesSpar;
+  const ndPnpOk = okFlags.ndPnp;
+  const ndSparOk = okFlags.ndSpar;
 
   // ── Shared lookup maps (used by Sales, OOS, ND and Phantom aggregation) ──
   const channelIdByName = new Map<string, string>(
@@ -789,6 +809,9 @@ export async function runSyncForTenant(
   syncMeta.salesOk = salesOk;
   syncMeta.salesPnpOk = salesPnpOk;
   syncMeta.salesSparOk = salesSparOk;
+  syncMeta.salesMassbuildOk = okFlags.salesMass;
+  syncMeta.salesGameOk = okFlags.salesGame;
+  syncMeta.salesMakroOk = okFlags.salesMakro;
   syncMeta.salesError = salesError;
   if (oosOk) syncMeta.oosDetailCount = oosDetailRows.length;
   syncMeta.oosOk = oosOk;

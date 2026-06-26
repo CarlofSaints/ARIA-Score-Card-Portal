@@ -344,3 +344,19 @@ export async function getSparSales(client: string) {
 export async function getSparNd(client: string, scanRange = 60) {
   return sqlQuery<SqlNdPnpRow>("nd_spar", { client, scanRange });
 }
+
+// ── MASSBUILD / GAME / MAKRO — Sales only (pool2 / .2 server) ─────────────────
+// Same column set as PnP/SPAR sales (Channel = MASSBUILD/GAME/MAKRO). These
+// channels currently expose Sales only — no ND/OOS/Phantom — so their points
+// redistribute onto Sales in the scorecard.
+export async function getMassbuildSales(client: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_massbuild", { client });
+}
+
+export async function getGameSales(client: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_game", { client });
+}
+
+export async function getMakroSales(client: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_makro", { client });
+}

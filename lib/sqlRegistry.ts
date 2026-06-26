@@ -199,6 +199,48 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     sql: "EXEC [GetDataForCustomDev_SPAR_Sales] @ClientName = @client",
     usedBy: "Sync → sales/<period>/* (merged with PnP); Sales page, scorecards",
   },
+  {
+    name: "sales_massbuild",
+    label: "Sales — MASSBUILD/Builders (Stored Procedure)",
+    category: "Sales",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "MASSBUILD (Builders) sales — same columns as PnP sales (Channel = MASSBUILD). Runs on pool2 (.2). Sales-only channel (no ND/OOS/Phantom → points redistribute onto Sales). ⚠ needs GRANT EXECUTE for the proxy login (Mark).",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [dbo].[GetDataForCustomDev_MASSBUILD_Sales] @ClientName = @client",
+    usedBy: "Sync → sales/<period>/* (merged); Sales page, scorecards",
+  },
+  {
+    name: "sales_game",
+    label: "Sales — GAME (Stored Procedure)",
+    category: "Sales",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "GAME sales — same columns as PnP sales (Channel = GAME). Runs on pool2 (.2). Sales-only channel. ⚠ needs GRANT EXECUTE for the proxy login (Mark).",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [dbo].[GetDataForCustomDev_GAME_Sales] @ClientName = @client",
+    usedBy: "Sync → sales/<period>/* (merged); Sales page, scorecards",
+  },
+  {
+    name: "sales_makro",
+    label: "Sales — MAKRO (Stored Procedure)",
+    category: "Sales",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "MAKRO sales — same columns as PnP sales (Channel = MAKRO). Runs on pool2 (.2). Sales-only channel. ⚠ needs GRANT EXECUTE for the proxy login (Mark).",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [dbo].[GetDataForCustomDev_MAKRO_Sales] @ClientName = @client",
+    usedBy: "Sync → sales/<period>/* (merged); Sales page, scorecards",
+  },
 
   // ── Numerical Distribution ─────────────────────────────────────────
   {
