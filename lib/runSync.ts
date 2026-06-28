@@ -726,10 +726,19 @@ export async function runSyncForTenant(
   const brands: string[] = brandsRes.data.map((b) => b.Brand);
 
   // ── Coverage: which entities have data, PER KPI ──
-  // Channels differ by KPI: PnP has all four; SPAR has only Sales + ND (no SOH →
-  // no OOS/Phantom). The scores route uses this to (a) show "—" for KPIs an
-  // entity has no data for, and (b) redistribute the missing KPIs' points over
-  // the ones it does have. An entity with no data for any KPI shows as no-data.
+  // Channels differ by KPI: PnP has all four; SPAR has only Sales + ND; the
+  // Massmart channels have Sales + OOS. The scores route uses this to (a) show
+  // "—" for KPIs an entity has no data for, and (b) redistribute the missing
+  // KPIs' points over the ones it does have.
+  //
+  // Sales & ND are ROW-driven: their SPs return the full universe (every
+  // site-SKU / every ranged combo), so "appears in rows" == "measured".
+  //
+  // OOS & Phantom are EVENT-based (a row = an out-of-stock / phantom item), so a
+  // channel whose SP ran but returned ZERO rows means "0 events = perfect", NOT
+  // "no data". These are therefore SP-DRIVEN: every store/product of a channel
+  // whose OOS/Phantom SP succeeded is covered (and scores 0% = full points when
+  // it has no events). Channel names here must match the channel master.
   const coverageFrom = (
     rows: ReadonlyArray<{ SiteCode: string; "Product ID": string; Channel: string }>
   ) => {
@@ -748,11 +757,43 @@ export async function runSyncForTenant(
     }
     return { channels: [...ch], stores: [...st], products: [...pr] };
   };
+
+  // product id → channel names it appears in (for SP-driven product coverage).
+  const productChannels = new Map<string, Set<string>>();
+  for (const r of salesRes.data) {
+    const p = productBySku.get(r["Product ID"]);
+    if (!p) continue;
+    let s = productChannels.get(p.id);
+    if (!s) productChannels.set(p.id, (s = new Set()));
+    s.add(r.Channel);
+  }
+  // SP-driven coverage: list each channel name + whether its SP for this KPI ran.
+  const spCoverage = (okList: Array<[string, boolean]>) => {
+    const chNames = new Set(
+      okList.filter(([n, ok]) => ok && channelIdByName.has(n)).map(([n]) => n)
+    );
+    return {
+      channels: [...chNames].map((n) => channelIdByName.get(n)!),
+      stores: stores.filter((s) => chNames.has(s.channelName)).map((s) => s.id),
+      products: products
+        .filter((p) => {
+          const pc = productChannels.get(p.id);
+          return !!pc && [...pc].some((c) => chNames.has(c));
+        })
+        .map((p) => p.id),
+    };
+  };
+
   const coverage = {
     sales: coverageFrom(salesRes.data),
     nd: coverageFrom(dedupedNd),
-    oos: coverageFrom(oosRows),
-    phantom: coverageFrom(dedupedPhantom),
+    oos: spCoverage([
+      ["PNP", okFlags.oosPnp],
+      ["MASSBUILD", okFlags.oosMass],
+      ["GAME", okFlags.oosGame],
+      ["MAKRO", okFlags.oosMakro],
+    ]),
+    phantom: spCoverage([["PNP", phantomOk]]),
   };
 
   // ── Write everything to blob ──
