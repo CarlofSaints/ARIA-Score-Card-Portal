@@ -49,6 +49,16 @@ export async function GET(
       scoring.find((s) => s.key === "sales_growth")?.salesGrowthMetric ??
       "ytd_vs_ytd";
 
+    // Sales growth for the configured metric, falling back to YTD-vs-YTD when the
+    // chosen month-metric has no prior-period baseline (e.g. a new channel with
+    // no same-month-last-year sales → ÷0 → null). Returns null only if YTD also
+    // has no baseline.
+    const growth = (sd: SalesData | undefined): number | null => {
+      const primary = salesGrowthPercent(sd, metric);
+      if (primary !== null || metric === "ytd_vs_ytd") return primary;
+      return salesGrowthPercent(sd, "ytd_vs_ytd");
+    };
+
     // KPI percentage blobs are stored per level. CAM derives from channel data.
     const lvl = type === "cam" ? "channel" : type;
     type CoverSet = { channels: string[]; stores: string[]; products: string[] };
@@ -109,7 +119,7 @@ export async function GET(
           oos: presentFor("oos", id),
         };
         const percents: Record<KpiKey, number | null> = {
-          sales_growth: present.sales_growth ? salesGrowthPercent(salesById.get(id), metric) : null,
+          sales_growth: present.sales_growth ? growth(salesById.get(id)) : null,
           numerical_distribution: present.numerical_distribution ? at(ndData, id) : null,
           phantom_inventory: present.phantom_inventory ? at(phantomData, id) : null,
           oos: present.oos ? at(oosData, id) : null,
@@ -156,7 +166,7 @@ export async function GET(
         };
         const percents: Record<KpiKey, number | null> = {
           sales_growth: present.sales_growth
-            ? avg(chFor("sales_growth").map((id) => salesGrowthPercent(salesById.get(id), metric)))
+            ? avg(chFor("sales_growth").map((id) => growth(salesById.get(id))))
             : null,
           numerical_distribution: present.numerical_distribution
             ? avg(chFor("numerical_distribution").map((id) => at(ndData, id)))
