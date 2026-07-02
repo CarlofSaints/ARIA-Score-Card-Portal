@@ -378,6 +378,15 @@ export async function runSyncForTenant(
     return Number.isFinite(n) ? n : 0;
   };
 
+  // Month helpers: convert the SP's relative windows to absolute calendar months.
+  const ymOf = (d: unknown): string => String(d ?? "").slice(0, 7); // "YYYY-MM"
+  const prevYm = (ym: string): string => {
+    const [y, m] = ym.split("-").map(Number);
+    if (!y || !m) return "";
+    return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+  };
+
+  interface MonthAgg { value: number; units: number; pyValue: number; pyUnits: number }
   interface SalesAgg {
     ytdValue: number;
     ytdUnits: number;
@@ -389,6 +398,8 @@ export async function runSyncForTenant(
     pyMtdUnits: number;
     lmValue: number;
     lmUnits: number;
+    maxDate: string; // latest MaxDate seen for this entity (YYYY-MM-DD)
+    months: Record<string, MonthAgg>; // "YYYY-MM" → sales
   }
   const emptyAgg = (): SalesAgg => ({
     ytdValue: 0,
@@ -401,7 +412,14 @@ export async function runSyncForTenant(
     pyMtdUnits: 0,
     lmValue: 0,
     lmUnits: 0,
+    maxDate: "",
+    months: {},
   });
+  const monthBucket = (a: SalesAgg, ym: string): MonthAgg => {
+    let b = a.months[ym];
+    if (!b) a.months[ym] = b = { value: 0, units: 0, pyValue: 0, pyUnits: 0 };
+    return b;
+  };
   const addRow = (a: SalesAgg, r: (typeof salesRes.data)[number]) => {
     a.ytdValue += num(r["YTD Value"]);
     a.ytdUnits += num(r["YTD Units"]);
@@ -413,6 +431,28 @@ export async function runSyncForTenant(
     a.pyMtdUnits += num(r["PY MTD Units"]);
     a.lmValue += num(r["PMTD Value"]);
     a.lmUnits += num(r["PMTD Units"]);
+
+    // Bucket into absolute months: MTD → the MaxDate month (with PY), PMTD → the
+    // month before it (no PY comparator exists). This lets a product that sells
+    // across channels with different freshness be split into the correct months.
+    const md = String(r.MaxDate ?? "").slice(0, 10);
+    if (md) {
+      if (md > a.maxDate) a.maxDate = md;
+      const mtdYm = ymOf(md);
+      if (mtdYm) {
+        const b = monthBucket(a, mtdYm);
+        b.value += num(r["MTD Value"]);
+        b.units += num(r["MTD Units"]);
+        b.pyValue += num(r["PY MTD Value"]);
+        b.pyUnits += num(r["PY MTD Units"]);
+        const pm = prevYm(mtdYm);
+        if (pm) {
+          const c = monthBucket(a, pm);
+          c.value += num(r["PMTD Value"]);
+          c.units += num(r["PMTD Units"]);
+        }
+      }
+    }
   };
 
   const salesByChannelId = new Map<string, SalesAgg>();
@@ -533,6 +573,8 @@ export async function runSyncForTenant(
       pyMtdValue: a.pyMtdValue,
       pyMtdUnits: a.pyMtdUnits,
       mtdGrowthPercent: growth(a.mtdValue, a.pyMtdValue),
+      maxDate: a.maxDate,
+      months: a.months,
     });
   }
   for (const st of stores) {
@@ -557,6 +599,8 @@ export async function runSyncForTenant(
       pyMtdValue: a.pyMtdValue,
       pyMtdUnits: a.pyMtdUnits,
       mtdGrowthPercent: growth(a.mtdValue, a.pyMtdValue),
+      maxDate: a.maxDate,
+      months: a.months,
     });
   }
   for (const p of products) {
@@ -581,6 +625,8 @@ export async function runSyncForTenant(
       pyMtdValue: a.pyMtdValue,
       pyMtdUnits: a.pyMtdUnits,
       mtdGrowthPercent: growth(a.mtdValue, a.pyMtdValue),
+      maxDate: a.maxDate,
+      months: a.months,
     });
   }
 
@@ -1005,6 +1051,13 @@ export async function runSyncForTenant(
       syncMeta.salesProductCount = salesProducts.length;
       syncMeta.salesDetailCount = salesDetailRows.length;
       syncMeta.salesRowCount = salesRes.data.length;
+    }
+    if (salesOk) {
+      syncMeta.salesMonths = [
+        ...new Set(salesDetailRows.flatMap((r) => Object.keys(r.months || {}))),
+      ]
+        .sort()
+        .reverse();
     }
     syncMeta.salesOk = salesOk;
     syncMeta.salesPnpOk = salesPnpOk;

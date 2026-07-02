@@ -392,6 +392,16 @@ export interface NdDetailRow {
   ndPercent: number; // rangedCount / totalCount * 100
 }
 
+// Sales for one calendar month, resolved from the SP's relative windows: the
+// channel's MaxDate-month comes from MTD (and carries a prior-year comparator),
+// the month before it comes from PMTD (no PY available).
+export interface MonthSales {
+  value: number;
+  units: number;
+  pyValue: number; // prior-year same month (only known for the MTD month; else 0)
+  pyUnits: number;
+}
+
 export interface SalesDetailRow {
   level: "channel" | "store" | "product";
   entityId: string;
@@ -412,6 +422,12 @@ export interface SalesDetailRow {
   pyMtdValue: number; // prior-year same-month-to-date value
   pyMtdUnits: number;
   mtdGrowthPercent: number; // (mtdValue - pyMtdValue) / pyMtdValue * 100
+  // Data-as-of date for this entity (the SP MaxDate). Channels can differ, which
+  // is why the same calendar month is MTD for one channel and PMTD for another.
+  maxDate?: string; // YYYY-MM-DD
+  // Absolute calendar-month sales, keyed "YYYY-MM". Lets the Sales page show a
+  // specific month regardless of each channel's data freshness.
+  months?: Record<string, MonthSales>;
 }
 
 // ── Ranging (denominator source — uploaded Range Management workbook) ──

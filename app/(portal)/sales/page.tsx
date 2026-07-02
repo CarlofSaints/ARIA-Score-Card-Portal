@@ -7,8 +7,14 @@ import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { SalesDetailRow } from "@/lib/types";
 
-type View = "ytd" | "mtd";
+// View is "ytd" or a specific calendar month key "YYYY-MM".
 type SortKey = "name" | "level" | "channelName" | "value" | "units" | "prev" | "growth";
+
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return ym;
+  return new Date(y, m - 1, 1).toLocaleString("en-ZA", { month: "short", year: "numeric" });
+}
 
 const COLS: { key: SortKey; label: string; width: number; align?: "right" | "center"; sortable?: boolean }[] = [
   { key: "name", label: "Entity", width: 300 },
@@ -38,7 +44,7 @@ export default function SalesPage() {
   const [period, setPeriod] = useState("");
   const [fetching, setFetching] = useState(true);
 
-  const [view, setView] = useState<View>("ytd");
+  const [view, setView] = useState<string>("ytd"); // "ytd" | "YYYY-MM"
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("value");
@@ -64,14 +70,33 @@ export default function SalesPage() {
       .finally(() => setFetching(false));
   }, [user]);
 
-  // Row accessors switch between YTD and MTD measures.
-  const val = (r: SalesDetailRow) => (view === "ytd" ? r.ytdValue : r.mtdValue);
-  const units = (r: SalesDetailRow) => (view === "ytd" ? r.ytdUnits : r.mtdUnits);
-  const prev = (r: SalesDetailRow) => (view === "ytd" ? r.splyValue : r.pyMtdValue);
-  const grow = (r: SalesDetailRow) => (view === "ytd" ? r.growthPercent : r.mtdGrowthPercent);
+  const isYtd = view === "ytd";
+  const mrow = (r: SalesDetailRow) => r.months?.[view];
+
+  // Row accessors switch between YTD and a specific calendar month. A month is
+  // resolved per entity from the SP's MTD/PMTD windows (so it's the real month,
+  // not just a label).
+  const val = (r: SalesDetailRow) => (isYtd ? r.ytdValue : mrow(r)?.value ?? 0);
+  const units = (r: SalesDetailRow) => (isYtd ? r.ytdUnits : mrow(r)?.units ?? 0);
+  const prev = (r: SalesDetailRow) => (isYtd ? r.splyValue : mrow(r)?.pyValue ?? 0);
+  const grow = (r: SalesDetailRow): number | null => {
+    if (isYtd) return r.growthPercent;
+    const p = mrow(r)?.pyValue ?? 0;
+    const v = mrow(r)?.value ?? 0;
+    return p > 0 ? Math.round(((v - p) / p) * 1000) / 10 : null;
+  };
 
   // Channel-level rows are no longer shown — only store and product.
   const baseRows = useMemo(() => rows.filter((r) => r.level !== "channel"), [rows]);
+
+  // Calendar months available in the data (newest first).
+  const months = useMemo(
+    () =>
+      Array.from(new Set(baseRows.flatMap((r) => Object.keys(r.months || {}))))
+        .sort()
+        .reverse(),
+    [baseRows]
+  );
 
   const channels = useMemo(
     () => Array.from(new Set(baseRows.map((r) => r.channelName).filter(Boolean))).sort(),
@@ -83,9 +108,20 @@ export default function SalesPage() {
     return baseRows.filter((r) => {
       if (channel !== "all" && r.channelName !== channel) return false;
       if (q && !entityName(r).toLowerCase().includes(q)) return false;
+      // When a specific month is selected, only show rows that have data for it.
+      if (view !== "ytd" && !r.months?.[view]) return false;
       return true;
     });
-  }, [baseRows, search, channel]);
+  }, [baseRows, search, channel, view]);
+
+  // Data-as-of dates in view. When a month is selected across channels with
+  // different freshness, the same month is MTD for some and PMTD for others —
+  // warn so the number isn't misread.
+  const maxDates = useMemo(
+    () => Array.from(new Set(filtered.map((r) => r.maxDate).filter(Boolean))).sort() as string[],
+    [filtered]
+  );
+  const showMismatch = !isYtd && maxDates.length > 1;
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -97,7 +133,7 @@ export default function SalesPage() {
       value: val,
       units: units,
       prev: prev,
-      growth: grow,
+      growth: (r) => grow(r) ?? -Infinity,
     };
     const get = accessor[sortKey];
     arr.sort((a, b) => {
@@ -122,9 +158,10 @@ export default function SalesPage() {
     else { setSortKey(k); setSortDir(k === "name" || k === "channelName" || k === "level" ? "asc" : "desc"); }
   }
 
-  const valLabel = view === "ytd" ? "YTD Value" : "MTD Value";
-  const unitsLabel = view === "ytd" ? "YTD Units" : "MTD Units";
-  const prevLabel = view === "ytd" ? "SPLY Value" : "PY MTD Value";
+  const viewLabel = isYtd ? "YTD" : monthLabel(view);
+  const valLabel = `${viewLabel} Value`;
+  const unitsLabel = `${viewLabel} Units`;
+  const prevLabel = isYtd ? "SPLY Value" : `PY ${viewLabel}`;
   const colLabel = (key: SortKey, fallback: string) =>
     key === "value" ? valLabel : key === "units" ? unitsLabel : key === "prev" ? prevLabel : fallback;
 
@@ -136,26 +173,38 @@ export default function SalesPage() {
         <div>
           <h1 className="text-2xl font-bold text-[var(--color-dark)]">Sales</h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
-            {view === "ytd"
+            {isYtd
               ? "Year-to-date sales vs same period last year (SPLY)"
-              : "Month-to-date sales vs this month last year (TMLY)"}
-            {period ? ` · ${period}` : ""}
+              : `${viewLabel} sales vs the same month last year`}
+            {!isYtd && maxDates.length === 1 ? ` · data as of ${maxDates[0]}` : ""}
           </p>
         </div>
-        <div className="inline-flex rounded-lg border border-[var(--color-border)] overflow-hidden">
-          {(["ytd", "mtd"] as View[]).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-4 py-2 text-sm font-medium ${
-                view === v ? "bg-[var(--color-primary)] text-white" : "bg-white text-[var(--color-text)]"
-              }`}
-            >
-              {v.toUpperCase()}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-[var(--color-text-muted)]">Period</label>
+          <select
+            value={view}
+            onChange={(e) => setView(e.target.value)}
+            className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
+          >
+            <option value="ytd">YTD (year-to-date)</option>
+            {months.map((m) => (
+              <option key={m} value={m}>
+                {monthLabel(m)}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
+
+      {showMismatch && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="font-medium">Heads up — mixed data dates.</span>{" "}
+          The channels in view have different “data as of” dates ({maxDates.join(", ")}).
+          For {viewLabel}, that means it&apos;s the full month for channels updated within{" "}
+          {viewLabel}, but a partial/earlier slice for others. Filter to a single channel
+          for a clean comparison.
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
         <StatCard label={valLabel} value={rand(totals.cur)} />
