@@ -146,6 +146,14 @@ export async function runSyncForTenant(
     return { data: [], count: 0 };
   };
 
+  // ⚠️ Concurrency cap: run the SPs in KPI PHASES rather than one giant
+  // Promise.all. The secondary server (pool2, .2) only has 5 connections, and
+  // some SPs are slow (PnP sales ~77s). Firing all ~20 at once starved the pool
+  // — queued queries hit the acquire timeout and were silently guarded out,
+  // dropping whole channels' data at random (e.g. PnP/MASSBUILD sales vanished).
+  // Each phase keeps pool2 concurrency at ≤5 (the pool max), so nothing queues,
+  // and it's far gentler on Mark's DB than 20 heavy SPs at once. Phases run
+  // sequentially; SPAR (primary .234) rides along in its phase on the other pool.
   const [
     salesPnpRes,
     salesSparRes,
@@ -153,23 +161,6 @@ export async function runSyncForTenant(
     salesGameRes,
     salesMakroRes,
     salesSrcRes,
-    oosPnpRes,
-    oosMassRes,
-    oosGameRes,
-    oosMakroRes,
-    oosSrcRes,
-    ndPnpRes,
-    ndSparRes,
-    ndMassRes,
-    ndGameRes,
-    ndMakroRes,
-    ndSrcRes,
-    phantomPnpRes,
-    phantomSrcRes,
-    phantomMassRes,
-    phantomGameRes,
-    phantomMakroRes,
-    brandsRes,
   ] = await Promise.all([
     getSalesPnp(client).catch(guard("PnP", salesErrors, () => (okFlags.salesPnp = false))),
     getSparSales(client).catch(guard("SPAR", salesErrors, () => (okFlags.salesSpar = false))),
@@ -177,17 +168,46 @@ export async function runSyncForTenant(
     getGameSales(client).catch(guard("GAME", salesErrors, () => (okFlags.salesGame = false))),
     getMakroSales(client).catch(guard("MAKRO", salesErrors, () => (okFlags.salesMakro = false))),
     getSrcSales(client).catch(guard("SRC", salesErrors, () => (okFlags.salesSrc = false))),
+  ]);
+
+  const [
+    oosPnpRes,
+    oosMassRes,
+    oosGameRes,
+    oosMakroRes,
+    oosSrcRes,
+  ] = await Promise.all([
     getOosPnp(client).catch(guard("PnP", oosErrors, () => (okFlags.oosPnp = false))),
     getMassbuildOos(client).catch(guard("MASSBUILD", oosErrors, () => (okFlags.oosMass = false))),
     getGameOos(client).catch(guard("GAME", oosErrors, () => (okFlags.oosGame = false))),
     getMakroOos(client).catch(guard("MAKRO", oosErrors, () => (okFlags.oosMakro = false))),
     getSrcOos(client).catch(guard("SRC", oosErrors, () => (okFlags.oosSrc = false))),
+  ]);
+
+  const [
+    ndPnpRes,
+    ndSparRes,
+    ndMassRes,
+    ndGameRes,
+    ndMakroRes,
+    ndSrcRes,
+  ] = await Promise.all([
     getNdPnp(client, ndRollingDays).catch(guard("PnP", ndErrors, () => (okFlags.ndPnp = false))),
     getSparNd(client, ndRollingDays).catch(guard("SPAR", ndErrors, () => (okFlags.ndSpar = false))),
     getMassbuildNd(client, ndRollingDays).catch(guard("MASSBUILD", ndErrors, () => (okFlags.ndMass = false))),
     getGameNd(client, ndRollingDays).catch(guard("GAME", ndErrors, () => (okFlags.ndGame = false))),
     getMakroNd(client, ndRollingDays).catch(guard("MAKRO", ndErrors, () => (okFlags.ndMakro = false))),
     getSrcNd(client, ndRollingDays).catch(guard("SRC", ndErrors, () => (okFlags.ndSrc = false))),
+  ]);
+
+  const [
+    phantomPnpRes,
+    phantomSrcRes,
+    phantomMassRes,
+    phantomGameRes,
+    phantomMakroRes,
+    brandsRes,
+  ] = await Promise.all([
     getPhantomStockPnp(client, phantomDays).catch(guard("PnP", phantomErrors, () => (okFlags.phantomPnp = false))),
     getSrcPhantom(client, phantomDays).catch(guard("SRC", phantomErrors, () => (okFlags.phantomSrc = false))),
     getMassbuildPhantom(client, phantomDays).catch(guard("MASSBUILD", phantomErrors, () => (okFlags.phantomMass = false))),
