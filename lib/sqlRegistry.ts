@@ -241,6 +241,20 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     sql: "EXEC [dbo].[GetDataForCustomDev_MAKRO_Sales] @ClientName = @client",
     usedBy: "Sync → sales/<period>/* (merged); Sales page, scorecards",
   },
+  {
+    name: "sales_src",
+    label: "Sales — Shoprite/Checkers (Stored Procedure)",
+    category: "Sales",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "One SP covers BOTH banners; each row carries its own Channel (CHECKERS / SHOPRITE) so the sync splits them into two channel rows. Same columns as PnP sales. Assumed to run on pool2 (.2) like the other GetDataForCustomDev_* SPs — flip to primary .234 if a probe can't find it.",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [dbo].[GetDataForCustomDev_SRC_Sales] @ClientName = @client",
+    usedBy: "Sync → sales/<period>/* (merged); Sales page, scorecards",
+  },
 
   // ── Numerical Distribution ─────────────────────────────────────────
   {
@@ -316,6 +330,74 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     sql: "EXEC [dbo].[GetDataForCustomDev_SPAR_NumericalDistribution] @ClientName = @client, @ScanRange = @scanRange",
     usedBy: "Sync → nd/<period>/* (merged with PnP); ND page, scorecards",
   },
+  {
+    name: "nd_massbuild",
+    label: "Numerical Distribution — MASSBUILD/Builders (Stored Procedure)",
+    category: "Numerical Distribution",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "MASSBUILD numerical distribution, mirrors the PnP ND SP (ALL ranged site-SKUs + [Numerical Distributed] flag). Runs on pool2 (.2). Merged with the other channels' ND in the sync.",
+    server: POOL2,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "scanRange", description: "Rolling window in days (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_MASSBUILD_NumericalDistribution] @ClientName = @client, @ScanRange = @scanRange",
+    usedBy: "Sync → nd/<period>/* (merged); ND page, scorecards",
+  },
+  {
+    name: "nd_game",
+    label: "Numerical Distribution — GAME (Stored Procedure)",
+    category: "Numerical Distribution",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "GAME numerical distribution, mirrors the PnP ND SP. Runs on pool2 (.2). Merged with the other channels' ND in the sync.",
+    server: POOL2,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "scanRange", description: "Rolling window in days (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_GAME_NumericalDistribution] @ClientName = @client, @ScanRange = @scanRange",
+    usedBy: "Sync → nd/<period>/* (merged); ND page, scorecards",
+  },
+  {
+    name: "nd_makro",
+    label: "Numerical Distribution — MAKRO (Stored Procedure)",
+    category: "Numerical Distribution",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "MAKRO numerical distribution, mirrors the PnP ND SP. Runs on pool2 (.2). Merged with the other channels' ND in the sync.",
+    server: POOL2,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "scanRange", description: "Rolling window in days (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_MAKRO_NumericalDistribution] @ClientName = @client, @ScanRange = @scanRange",
+    usedBy: "Sync → nd/<period>/* (merged); ND page, scorecards",
+  },
+  {
+    name: "nd_src",
+    label: "Numerical Distribution — Shoprite/Checkers (Stored Procedure)",
+    category: "Numerical Distribution",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "Shoprite/Checkers numerical distribution — one SP, rows split by Channel (CHECKERS / SHOPRITE). Mirrors the PnP ND SP. Assumed pool2 (.2). Merged with the other channels' ND in the sync.",
+    server: POOL2,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "scanRange", description: "Rolling window in days (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_SRC_NumericalDistribution] @ClientName = @client, @ScanRange = @scanRange",
+    usedBy: "Sync → nd/<period>/* (merged); ND page, scorecards",
+  },
 
   // ── Out of Stocks ──────────────────────────────────────────────────
   {
@@ -388,6 +470,20 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     sql: "EXEC [dbo].[GetDataForCustomDev_MAKRO_OutOfStock] @ClientName = @client",
     usedBy: "Sync → oos/<period>/* (merged); OOS page, scorecards",
   },
+  {
+    name: "oos_src",
+    label: "Out of Stock — Shoprite/Checkers (Stored Procedure)",
+    category: "Out of Stocks",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "Shoprite/Checkers out-of-stock — one SP, rows split by Channel (CHECKERS / SHOPRITE). Same row shape as PnP OOS. Assumed pool2 (.2). Merged with the other channels' OOS in the sync.",
+    server: POOL2,
+    database: DB,
+    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
+    sql: "EXEC [dbo].[GetDataForCustomDev_SRC_OutOfStock] @ClientName = @client",
+    usedBy: "Sync → oos/<period>/* (merged); OOS page, scorecards",
+  },
 
   // ── Phantom Stock ──────────────────────────────────────────────────
   {
@@ -406,6 +502,74 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     ],
     sql: "EXEC [dbo].[GetDataForCustomDev_PNP_PhantomStock] @ClientName = @client, @PhantomDays = @phantomDays",
     usedBy: "Sync → phantom/<period>/detail.json; Phantom Stock page",
+  },
+  {
+    name: "phantom_massbuild",
+    label: "Phantom Stock — MASSBUILD/Builders (Stored Procedure)",
+    category: "Phantom Stock",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "MASSBUILD phantom stock, same row shape as the PnP phantom SP (Channel = MASSBUILD). Runs on pool2 (.2). Merged into the multi-channel phantom aggregation. Denominator: no PnP-style range file for this channel → falls back to the stores×products universe.",
+    server: POOL2,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "phantomDays", description: "Lookback window in days (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_MASSBUILD_PhantomStock] @ClientName = @client, @PhantomDays = @phantomDays",
+    usedBy: "Sync → phantom/<period>/* (merged); Phantom Stock page, scorecards",
+  },
+  {
+    name: "phantom_game",
+    label: "Phantom Stock — GAME (Stored Procedure)",
+    category: "Phantom Stock",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "GAME phantom stock, same row shape as the PnP phantom SP (Channel = GAME). Runs on pool2 (.2). Merged into the multi-channel phantom aggregation.",
+    server: POOL2,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "phantomDays", description: "Lookback window in days (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_GAME_PhantomStock] @ClientName = @client, @PhantomDays = @phantomDays",
+    usedBy: "Sync → phantom/<period>/* (merged); Phantom Stock page, scorecards",
+  },
+  {
+    name: "phantom_makro",
+    label: "Phantom Stock — MAKRO (Stored Procedure)",
+    category: "Phantom Stock",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "MAKRO phantom stock, same row shape as the PnP phantom SP (Channel = MAKRO). Runs on pool2 (.2). Merged into the multi-channel phantom aggregation.",
+    server: POOL2,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "phantomDays", description: "Lookback window in days (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_MAKRO_PhantomStock] @ClientName = @client, @PhantomDays = @phantomDays",
+    usedBy: "Sync → phantom/<period>/* (merged); Phantom Stock page, scorecards",
+  },
+  {
+    name: "phantom_src",
+    label: "Phantom Stock — Shoprite/Checkers (Stored Procedure)",
+    category: "Phantom Stock",
+    kind: "stored_procedure",
+    status: "building",
+    purpose:
+      "Shoprite/Checkers phantom stock — one SP, rows split by Channel (CHECKERS / SHOPRITE). Same row shape as the PnP phantom SP. Assumed pool2 (.2). Merged into the multi-channel phantom aggregation.",
+    server: POOL2,
+    database: DB,
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "phantomDays", description: "Lookback window in days (default 60)" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_SRC_PhantomStock] @ClientName = @client, @PhantomDays = @phantomDays",
+    usedBy: "Sync → phantom/<period>/* (merged); Phantom Stock page, scorecards",
   },
   {
     name: "phantom_detail",

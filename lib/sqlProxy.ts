@@ -375,3 +375,53 @@ export async function getGameOos(client: string) {
 export async function getMakroOos(client: string) {
   return sqlQuery<SqlOosPnpRow>("oos_makro", { client });
 }
+
+// ── MASSBUILD / GAME / MAKRO — Numerical Distribution (pool2 / .2 server) ──────
+// Same row shape as the PnP ND SP (ALL ranged site-SKUs + "Numerical Distributed"
+// flag). Merged with the other channels' ND rows in the sync.
+export async function getMassbuildNd(client: string, scanRange = 60) {
+  return sqlQuery<SqlNdPnpRow>("nd_massbuild", { client, scanRange });
+}
+
+export async function getGameNd(client: string, scanRange = 60) {
+  return sqlQuery<SqlNdPnpRow>("nd_game", { client, scanRange });
+}
+
+export async function getMakroNd(client: string, scanRange = 60) {
+  return sqlQuery<SqlNdPnpRow>("nd_makro", { client, scanRange });
+}
+
+// ── MASSBUILD / GAME / MAKRO — Phantom Stock (pool2 / .2 server) ───────────────
+// Same row shape as the PnP phantom SP. Merged into the multi-channel phantom
+// aggregation in the sync.
+export async function getMassbuildPhantom(client: string, phantomDays = 60) {
+  return sqlQuery<SqlPhantomStockPnpRow>("phantom_massbuild", { client, phantomDays });
+}
+
+export async function getGamePhantom(client: string, phantomDays = 60) {
+  return sqlQuery<SqlPhantomStockPnpRow>("phantom_game", { client, phantomDays });
+}
+
+export async function getMakroPhantom(client: string, phantomDays = 60) {
+  return sqlQuery<SqlPhantomStockPnpRow>("phantom_makro", { client, phantomDays });
+}
+
+// ── SHOPRITE / CHECKERS (SRC) — Sales, OOS, ND, Phantom (all 4 KPIs) ───────────
+// One SP per KPI covers BOTH banners; each row carries its own Channel
+// (CHECKERS / SHOPRITE) so the per-channel aggregation splits them into two
+// channel rows automatically. Row shapes mirror the PnP SPs.
+export async function getSrcSales(client: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_src", { client });
+}
+
+export async function getSrcOos(client: string) {
+  return sqlQuery<SqlOosPnpRow>("oos_src", { client });
+}
+
+export async function getSrcNd(client: string, scanRange = 60) {
+  return sqlQuery<SqlNdPnpRow>("nd_src", { client, scanRange });
+}
+
+export async function getSrcPhantom(client: string, phantomDays = 60) {
+  return sqlQuery<SqlPhantomStockPnpRow>("phantom_src", { client, phantomDays });
+}

@@ -11,13 +11,23 @@ import {
   getMassbuildSales,
   getGameSales,
   getMakroSales,
+  getSrcSales,
   getOosPnp,
   getMassbuildOos,
   getGameOos,
   getMakroOos,
+  getSrcOos,
   getNdPnp,
   getSparNd,
+  getMassbuildNd,
+  getGameNd,
+  getMakroNd,
+  getSrcNd,
   getPhantomStockPnp,
+  getSrcPhantom,
+  getMassbuildPhantom,
+  getGamePhantom,
+  getMakroPhantom,
 } from "@/lib/sqlProxy";
 import type {
   ScorecardChannel,
@@ -123,13 +133,13 @@ export async function runSyncForTenant(
   const salesErrors: string[] = [];
   const ndErrors: string[] = [];
   const oosErrors: string[] = [];
+  const phantomErrors: string[] = [];
   const okFlags = {
-    salesPnp: true, salesSpar: true, salesMass: true, salesGame: true, salesMakro: true,
-    ndPnp: true, ndSpar: true,
-    oosPnp: true, oosMass: true, oosGame: true, oosMakro: true,
+    salesPnp: true, salesSpar: true, salesMass: true, salesGame: true, salesMakro: true, salesSrc: true,
+    ndPnp: true, ndSpar: true, ndMass: true, ndGame: true, ndMakro: true, ndSrc: true,
+    oosPnp: true, oosMass: true, oosGame: true, oosMakro: true, oosSrc: true,
+    phantomPnp: true, phantomMass: true, phantomGame: true, phantomMakro: true, phantomSrc: true,
   };
-  let phantomOk = true;
-  let phantomError = "";
   const guard = (label: string, log: string[], onFail: () => void) => (e: unknown) => {
     onFail();
     log.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
@@ -142,13 +152,23 @@ export async function runSyncForTenant(
     salesMassRes,
     salesGameRes,
     salesMakroRes,
+    salesSrcRes,
     oosPnpRes,
     oosMassRes,
     oosGameRes,
     oosMakroRes,
+    oosSrcRes,
     ndPnpRes,
     ndSparRes,
-    phantomRes,
+    ndMassRes,
+    ndGameRes,
+    ndMakroRes,
+    ndSrcRes,
+    phantomPnpRes,
+    phantomSrcRes,
+    phantomMassRes,
+    phantomGameRes,
+    phantomMakroRes,
     brandsRes,
   ] = await Promise.all([
     getSalesPnp(client).catch(guard("PnP", salesErrors, () => (okFlags.salesPnp = false))),
@@ -156,17 +176,23 @@ export async function runSyncForTenant(
     getMassbuildSales(client).catch(guard("MASSBUILD", salesErrors, () => (okFlags.salesMass = false))),
     getGameSales(client).catch(guard("GAME", salesErrors, () => (okFlags.salesGame = false))),
     getMakroSales(client).catch(guard("MAKRO", salesErrors, () => (okFlags.salesMakro = false))),
+    getSrcSales(client).catch(guard("SRC", salesErrors, () => (okFlags.salesSrc = false))),
     getOosPnp(client).catch(guard("PnP", oosErrors, () => (okFlags.oosPnp = false))),
     getMassbuildOos(client).catch(guard("MASSBUILD", oosErrors, () => (okFlags.oosMass = false))),
     getGameOos(client).catch(guard("GAME", oosErrors, () => (okFlags.oosGame = false))),
     getMakroOos(client).catch(guard("MAKRO", oosErrors, () => (okFlags.oosMakro = false))),
+    getSrcOos(client).catch(guard("SRC", oosErrors, () => (okFlags.oosSrc = false))),
     getNdPnp(client, ndRollingDays).catch(guard("PnP", ndErrors, () => (okFlags.ndPnp = false))),
     getSparNd(client, ndRollingDays).catch(guard("SPAR", ndErrors, () => (okFlags.ndSpar = false))),
-    getPhantomStockPnp(client, phantomDays).catch((e) => {
-      phantomOk = false;
-      phantomError = e instanceof Error ? e.message : String(e);
-      return { data: [], count: 0 };
-    }),
+    getMassbuildNd(client, ndRollingDays).catch(guard("MASSBUILD", ndErrors, () => (okFlags.ndMass = false))),
+    getGameNd(client, ndRollingDays).catch(guard("GAME", ndErrors, () => (okFlags.ndGame = false))),
+    getMakroNd(client, ndRollingDays).catch(guard("MAKRO", ndErrors, () => (okFlags.ndMakro = false))),
+    getSrcNd(client, ndRollingDays).catch(guard("SRC", ndErrors, () => (okFlags.ndSrc = false))),
+    getPhantomStockPnp(client, phantomDays).catch(guard("PnP", phantomErrors, () => (okFlags.phantomPnp = false))),
+    getSrcPhantom(client, phantomDays).catch(guard("SRC", phantomErrors, () => (okFlags.phantomSrc = false))),
+    getMassbuildPhantom(client, phantomDays).catch(guard("MASSBUILD", phantomErrors, () => (okFlags.phantomMass = false))),
+    getGamePhantom(client, phantomDays).catch(guard("GAME", phantomErrors, () => (okFlags.phantomGame = false))),
+    getMakroPhantom(client, phantomDays).catch(guard("MAKRO", phantomErrors, () => (okFlags.phantomMakro = false))),
     getClientBrands(client).catch(() => ({ data: [], count: 0 })),
   ]);
 
@@ -179,26 +205,55 @@ export async function runSyncForTenant(
       ...salesMassRes.data,
       ...salesGameRes.data,
       ...salesMakroRes.data,
+      ...salesSrcRes.data,
     ],
   };
-  const ndRes = { data: [...ndPnpRes.data, ...ndSparRes.data] };
+  const ndRes = {
+    data: [
+      ...ndPnpRes.data,
+      ...ndSparRes.data,
+      ...ndMassRes.data,
+      ...ndGameRes.data,
+      ...ndMakroRes.data,
+      ...ndSrcRes.data,
+    ],
+  };
   const oosRes = {
     data: [
       ...oosPnpRes.data,
       ...oosMassRes.data,
       ...oosGameRes.data,
       ...oosMakroRes.data,
+      ...oosSrcRes.data,
     ],
   };
-  // Sales/ND/OOS are written if ANY channel returned data (so one channel's
-  // failure never wipes the others).
+  const phantomRes = {
+    data: [
+      ...phantomPnpRes.data,
+      ...phantomSrcRes.data,
+      ...phantomMassRes.data,
+      ...phantomGameRes.data,
+      ...phantomMakroRes.data,
+    ],
+  };
+  // Sales/ND/OOS/Phantom are written if ANY channel returned data (so one
+  // channel's failure never wipes the others).
   const salesOk =
-    okFlags.salesPnp || okFlags.salesSpar || okFlags.salesMass || okFlags.salesGame || okFlags.salesMakro;
-  const ndOk = okFlags.ndPnp || okFlags.ndSpar;
-  const oosOk = okFlags.oosPnp || okFlags.oosMass || okFlags.oosGame || okFlags.oosMakro;
+    okFlags.salesPnp || okFlags.salesSpar || okFlags.salesMass ||
+    okFlags.salesGame || okFlags.salesMakro || okFlags.salesSrc;
+  const ndOk =
+    okFlags.ndPnp || okFlags.ndSpar || okFlags.ndMass ||
+    okFlags.ndGame || okFlags.ndMakro || okFlags.ndSrc;
+  const oosOk =
+    okFlags.oosPnp || okFlags.oosMass || okFlags.oosGame ||
+    okFlags.oosMakro || okFlags.oosSrc;
+  const phantomOk =
+    okFlags.phantomPnp || okFlags.phantomSrc || okFlags.phantomMass ||
+    okFlags.phantomGame || okFlags.phantomMakro;
   const salesError = salesErrors.join(" | ");
   const ndError = ndErrors.join(" | ");
   const oosError = oosErrors.join(" | ");
+  const phantomError = phantomErrors.join(" | ");
   const salesPnpOk = okFlags.salesPnp;
   const salesSparOk = okFlags.salesSpar;
   const ndPnpOk = okFlags.ndPnp;
@@ -535,7 +590,9 @@ export async function runSyncForTenant(
   const phantomRows: PhantomDetailRow[] = dedupedPhantom.map((row) => {
     const store = storeBySiteCode.get(row.SiteCode);
     const product = productBySku.get(row["Product ID"]);
-    const channelId = store ? channelIdByName.get(store.channelName) : undefined;
+    const channelId = store
+      ? channelIdByName.get(store.channelName)
+      : channelIdByName.get(row.Channel);
 
     const spRanging = String(row["Ranging Status"] ?? "").toLowerCase();
     const ranged = spRanging === "true" ? true : spRanging === "false" ? false : null;
@@ -566,40 +623,33 @@ export async function runSyncForTenant(
     };
   });
 
+  // Denominator = ranged total from the uploaded range file (by design for PnP).
+  // Channels/stores/products NOT in the range file (e.g. SRC / Massmart, which
+  // have phantom SPs but no PnP-style range upload) fall back to the legacy
+  // stores×products universe so they still get a computable phantom %. PnP is
+  // unchanged (it always has a range-file total).
   const phantomByChannel: Record<string, number> = {};
   for (const ch of channels) {
     const count = phantomCountByChannel[ch.id] || 0;
-    if (hasRanging) {
-      const total = rangedTotalByChannelName[ch.name] || 0;
-      if (total > 0) phantomByChannel[ch.id] = Math.round((count / total) * 1000) / 10;
-    } else {
-      const total = oosTotalByChannel[ch.id] || 1;
-      phantomByChannel[ch.id] = Math.round((count / total) * 1000) / 10;
-    }
+    const rangedTotal = hasRanging ? rangedTotalByChannelName[ch.name] || 0 : 0;
+    const total = rangedTotal > 0 ? rangedTotal : oosTotalByChannel[ch.id] || 1;
+    phantomByChannel[ch.id] = Math.round((count / total) * 1000) / 10;
   }
 
   const phantomByStore: Record<string, number> = {};
   for (const st of stores) {
     const count = phantomCountByStore[st.id] || 0;
-    if (hasRanging) {
-      const total = st.siteCode ? rangedByStoreCode[st.siteCode] || 0 : 0;
-      if (total > 0) phantomByStore[st.id] = Math.round((count / total) * 1000) / 10;
-    } else {
-      const total = oosTotalByStore[st.id] || 1;
-      phantomByStore[st.id] = Math.round((count / total) * 1000) / 10;
-    }
+    const rangedTotal = hasRanging && st.siteCode ? rangedByStoreCode[st.siteCode] || 0 : 0;
+    const total = rangedTotal > 0 ? rangedTotal : oosTotalByStore[st.id] || 1;
+    phantomByStore[st.id] = Math.round((count / total) * 1000) / 10;
   }
 
   const phantomByProduct: Record<string, number> = {};
   for (const p of products) {
     const count = phantomCountByProduct[p.id] || 0;
-    if (hasRanging) {
-      const total = rangedByProductId[p.sku] || 0;
-      if (total > 0) phantomByProduct[p.id] = Math.round((count / total) * 1000) / 10;
-    } else {
-      const total = oosTotalByProduct[p.id] || 1;
-      phantomByProduct[p.id] = Math.round((count / total) * 1000) / 10;
-    }
+    const rangedTotal = hasRanging ? rangedByProductId[p.sku] || 0 : 0;
+    const total = rangedTotal > 0 ? rangedTotal : oosTotalByProduct[p.id] || 1;
+    phantomByProduct[p.id] = Math.round((count / total) * 1000) / 10;
   }
 
   // ── Aggregate ND (GetDataForCustomDev_PNP_NumericalDistribution — PnP) ──
@@ -833,6 +883,7 @@ export async function runSyncForTenant(
   syncMeta.salesMassbuildOk = okFlags.salesMass;
   syncMeta.salesGameOk = okFlags.salesGame;
   syncMeta.salesMakroOk = okFlags.salesMakro;
+  syncMeta.salesSrcOk = okFlags.salesSrc;
   syncMeta.salesError = salesError;
   if (oosOk) syncMeta.oosDetailCount = oosDetailRows.length;
   syncMeta.oosOk = oosOk;
@@ -840,16 +891,26 @@ export async function runSyncForTenant(
   syncMeta.oosMassbuildOk = okFlags.oosMass;
   syncMeta.oosGameOk = okFlags.oosGame;
   syncMeta.oosMakroOk = okFlags.oosMakro;
+  syncMeta.oosSrcOk = okFlags.oosSrc;
   syncMeta.oosError = oosError;
   if (ndOk) syncMeta.ndDetailCount = ndDetailRows.length;
   syncMeta.ndOk = ndOk;
   syncMeta.ndPnpOk = ndPnpOk;
   syncMeta.ndSparOk = ndSparOk;
+  syncMeta.ndMassbuildOk = okFlags.ndMass;
+  syncMeta.ndGameOk = okFlags.ndGame;
+  syncMeta.ndMakroOk = okFlags.ndMakro;
+  syncMeta.ndSrcOk = okFlags.ndSrc;
   syncMeta.ndError = ndError;
   // Record the scan window actually used so the ND page can show it.
   if (ndOk) syncMeta.ndRollingDays = ndRollingDays;
   if (phantomOk) syncMeta.phantomDetailCount = phantomRows.length;
   syncMeta.phantomOk = phantomOk;
+  syncMeta.phantomPnpOk = okFlags.phantomPnp;
+  syncMeta.phantomSrcOk = okFlags.phantomSrc;
+  syncMeta.phantomMassbuildOk = okFlags.phantomMass;
+  syncMeta.phantomGameOk = okFlags.phantomGame;
+  syncMeta.phantomMakroOk = okFlags.phantomMakro;
   syncMeta.phantomError = phantomError;
   // Record the lookback window actually used so the Phantom page can show it.
   if (phantomOk) syncMeta.phantomDays = phantomDays;
