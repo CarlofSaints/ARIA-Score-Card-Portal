@@ -40,8 +40,15 @@ import type {
   NdDetailRow,
 } from "@/lib/types";
 
+// A sync can be scoped to specific parts so a routine refresh doesn't re-pull
+// everything (Sales changes daily; ND/Phantom rarely). "core" = channels /
+// stores / products / brands master data.
+export type SyncPart = "core" | "sales" | "oos" | "nd" | "phantom";
+export const ALL_SYNC_PARTS: SyncPart[] = ["core", "sales", "oos", "nd", "phantom"];
+
 export interface SyncResult {
   period: string;
+  parts: SyncPart[];
   phantomSkipped: boolean;
   phantomError?: string;
   counts: {
@@ -73,7 +80,8 @@ export interface SyncResult {
  */
 export async function runSyncForTenant(
   slug: string,
-  source: "manual" | "cron" = "manual"
+  source: "manual" | "cron" = "manual",
+  options: { parts?: SyncPart[] } = {}
 ): Promise<SyncResult> {
   const config = await getTenantConfig(slug);
   if (!config?.sqlClientName) {
@@ -82,45 +90,97 @@ export async function runSyncForTenant(
     );
   }
 
+  // Which parts to sync (default = everything, e.g. cron & first run).
+  const parts: SyncPart[] =
+    options.parts && options.parts.length ? options.parts : ALL_SYNC_PARTS;
+  const wants = (p: SyncPart) => parts.includes(p);
+
+  // Per-query timing: wrap each SP call so we record how long it took, how many
+  // rows it returned, and whether it succeeded. Fed into the sync log + meta so
+  // the Control Centre can show which query is slow.
+  const syncStart = Date.now();
+  const timings: Record<string, { ms: number; rows: number; ok: boolean; error?: string }> = {};
+  const timed = <T extends { data: unknown[] }>(key: string, fn: () => Promise<T>): Promise<T> => {
+    const start = Date.now();
+    return fn().then(
+      (r) => {
+        timings[key] = { ms: Date.now() - start, rows: r.data.length, ok: true };
+        return r;
+      },
+      (e) => {
+        timings[key] = {
+          ms: Date.now() - start,
+          rows: 0,
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+        throw e;
+      }
+    );
+  };
+
   const client = config.sqlClientName;
   const phantomDays = config.phantomLookbackDays ?? 60;
   const ndRollingDays = config.ndRollingDays ?? 60;
   const now = new Date();
   const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  // ── Batch 1: Core data (channels, stores, products) ──
-  const [channelsRes, storesRes, productsRes] = await Promise.all([
-    getClientChannels(client),
-    getClientStores(client),
-    getClientProducts(client),
-  ]);
+  // ── Core master data (channels, stores, products, brands) ──
+  // KPI rows map to these, so they must be in memory even on a partial sync.
+  // When "core" is requested we re-pull + rewrite them; otherwise we reuse the
+  // last-synced copies from blob (a KPI-only sync shouldn't re-pull master data).
+  let channels: ScorecardChannel[] = [];
+  let stores: ScorecardStore[] = [];
+  let products: ScorecardProduct[] = [];
+  let brands: string[] = [];
+  let coreFetched = wants("core");
 
-  // Transform channels — no ChannelDataID exists; the channel name is the id.
-  const channels: ScorecardChannel[] = channelsRes.data.map((ch) => ({
-    id: ch.Channel,
-    name: ch.Channel,
-  }));
+  const fetchCore = async () => {
+    const [channelsRes, storesRes, productsRes, brandsRes] = await Promise.all([
+      timed("client_channels", () => getClientChannels(client)),
+      timed("client_stores", () => getClientStores(client)),
+      timed("client_products", () => getClientProducts(client)),
+      timed("client_brands", () => getClientBrands(client)).catch(() => ({ data: [], count: 0 })),
+    ]);
+    // Channels — no ChannelDataID exists; the channel name is the id.
+    channels = channelsRes.data.map((ch) => ({ id: ch.Channel, name: ch.Channel }));
+    // Stores — SiteID is the site code string (e.g. "PNP-HC14"); the display
+    // name lives in "Site Name". Use SiteID as both id and siteCode.
+    stores = storesRes.data.map((st) => ({
+      id: String(st.SiteID),
+      name: st["Site Name"] || String(st.SiteID),
+      channelId: st.Channel,
+      channelName: st.Channel,
+      subChannel: st.SubChannel || undefined,
+      region: st.Province || undefined,
+      siteCode: String(st.SiteID),
+    }));
+    // Products — the product key is "Client Product ID" (no ID column).
+    products = productsRes.data.map((p) => ({
+      id: p["Client Product ID"],
+      name: p["Product Description"] || p["Client Product ID"],
+      sku: p["Client Product ID"],
+      brand: p["Product Brand"] || "Unknown",
+      category: p["Product Category"] || undefined,
+    }));
+    brands = brandsRes.data.map((b) => b.Brand);
+  };
 
-  // Transform stores — SiteID is the site code string (e.g. "PNP-HC14"); the
-  // display name lives in "Site Name". Use SiteID as both id and siteCode.
-  const stores: ScorecardStore[] = storesRes.data.map((st) => ({
-    id: String(st.SiteID),
-    name: st["Site Name"] || String(st.SiteID),
-    channelId: st.Channel,
-    channelName: st.Channel,
-    subChannel: st.SubChannel || undefined,
-    region: st.Province || undefined,
-    siteCode: String(st.SiteID),
-  }));
-
-  // Transform products — the product key is "Client Product ID" (no ID column).
-  const products: ScorecardProduct[] = productsRes.data.map((p) => ({
-    id: p["Client Product ID"],
-    name: p["Product Description"] || p["Client Product ID"],
-    sku: p["Client Product ID"],
-    brand: p["Product Brand"] || "Unknown",
-    category: p["Product Category"] || undefined,
-  }));
+  if (coreFetched) {
+    await fetchCore();
+  } else {
+    [channels, stores, products] = await Promise.all([
+      readJson<ScorecardChannel[]>(`${slug}/data/channels.json`, []),
+      readJson<ScorecardStore[]>(`${slug}/data/stores.json`, []),
+      readJson<ScorecardProduct[]>(`${slug}/data/products.json`, []),
+    ]);
+    // First-run safety: if master data was never synced, pull it now so KPI
+    // rows have something to map to (and write it below).
+    if (!channels.length && !stores.length && !products.length) {
+      await fetchCore();
+      coreFetched = true;
+    }
+  }
 
   // ── Batch 2: Sales, OOS, ND, Phantom, Brands (PnP + SPAR) ──
   // Track whether each stored procedure actually succeeded — a failed call must
@@ -145,6 +205,9 @@ export async function runSyncForTenant(
     log.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
     return { data: [], count: 0 };
   };
+  // Placeholder for a KPI phase that isn't being synced this run — its blobs are
+  // left untouched below (nothing is written for it), preserving existing data.
+  const emptyRes = { data: [] as never[], count: 0 };
 
   // ⚠️ Concurrency cap: run the SPs in KPI PHASES rather than one giant
   // Promise.all. The secondary server (pool2, .2) only has 5 connections, and
@@ -161,14 +224,16 @@ export async function runSyncForTenant(
     salesGameRes,
     salesMakroRes,
     salesSrcRes,
-  ] = await Promise.all([
-    getSalesPnp(client).catch(guard("PnP", salesErrors, () => (okFlags.salesPnp = false))),
-    getSparSales(client).catch(guard("SPAR", salesErrors, () => (okFlags.salesSpar = false))),
-    getMassbuildSales(client).catch(guard("MASSBUILD", salesErrors, () => (okFlags.salesMass = false))),
-    getGameSales(client).catch(guard("GAME", salesErrors, () => (okFlags.salesGame = false))),
-    getMakroSales(client).catch(guard("MAKRO", salesErrors, () => (okFlags.salesMakro = false))),
-    getSrcSales(client).catch(guard("SRC", salesErrors, () => (okFlags.salesSrc = false))),
-  ]);
+  ] = wants("sales")
+    ? await Promise.all([
+        timed("sales_pnp", () => getSalesPnp(client)).catch(guard("PnP", salesErrors, () => (okFlags.salesPnp = false))),
+        timed("sales_spar", () => getSparSales(client)).catch(guard("SPAR", salesErrors, () => (okFlags.salesSpar = false))),
+        timed("sales_massbuild", () => getMassbuildSales(client)).catch(guard("MASSBUILD", salesErrors, () => (okFlags.salesMass = false))),
+        timed("sales_game", () => getGameSales(client)).catch(guard("GAME", salesErrors, () => (okFlags.salesGame = false))),
+        timed("sales_makro", () => getMakroSales(client)).catch(guard("MAKRO", salesErrors, () => (okFlags.salesMakro = false))),
+        timed("sales_src", () => getSrcSales(client)).catch(guard("SRC", salesErrors, () => (okFlags.salesSrc = false))),
+      ])
+    : [emptyRes, emptyRes, emptyRes, emptyRes, emptyRes, emptyRes];
 
   const [
     oosPnpRes,
@@ -176,13 +241,15 @@ export async function runSyncForTenant(
     oosGameRes,
     oosMakroRes,
     oosSrcRes,
-  ] = await Promise.all([
-    getOosPnp(client).catch(guard("PnP", oosErrors, () => (okFlags.oosPnp = false))),
-    getMassbuildOos(client).catch(guard("MASSBUILD", oosErrors, () => (okFlags.oosMass = false))),
-    getGameOos(client).catch(guard("GAME", oosErrors, () => (okFlags.oosGame = false))),
-    getMakroOos(client).catch(guard("MAKRO", oosErrors, () => (okFlags.oosMakro = false))),
-    getSrcOos(client).catch(guard("SRC", oosErrors, () => (okFlags.oosSrc = false))),
-  ]);
+  ] = wants("oos")
+    ? await Promise.all([
+        timed("oos_pnp", () => getOosPnp(client)).catch(guard("PnP", oosErrors, () => (okFlags.oosPnp = false))),
+        timed("oos_massbuild", () => getMassbuildOos(client)).catch(guard("MASSBUILD", oosErrors, () => (okFlags.oosMass = false))),
+        timed("oos_game", () => getGameOos(client)).catch(guard("GAME", oosErrors, () => (okFlags.oosGame = false))),
+        timed("oos_makro", () => getMakroOos(client)).catch(guard("MAKRO", oosErrors, () => (okFlags.oosMakro = false))),
+        timed("oos_src", () => getSrcOos(client)).catch(guard("SRC", oosErrors, () => (okFlags.oosSrc = false))),
+      ])
+    : [emptyRes, emptyRes, emptyRes, emptyRes, emptyRes];
 
   const [
     ndPnpRes,
@@ -191,14 +258,16 @@ export async function runSyncForTenant(
     ndGameRes,
     ndMakroRes,
     ndSrcRes,
-  ] = await Promise.all([
-    getNdPnp(client, ndRollingDays).catch(guard("PnP", ndErrors, () => (okFlags.ndPnp = false))),
-    getSparNd(client, ndRollingDays).catch(guard("SPAR", ndErrors, () => (okFlags.ndSpar = false))),
-    getMassbuildNd(client, ndRollingDays).catch(guard("MASSBUILD", ndErrors, () => (okFlags.ndMass = false))),
-    getGameNd(client, ndRollingDays).catch(guard("GAME", ndErrors, () => (okFlags.ndGame = false))),
-    getMakroNd(client, ndRollingDays).catch(guard("MAKRO", ndErrors, () => (okFlags.ndMakro = false))),
-    getSrcNd(client, ndRollingDays).catch(guard("SRC", ndErrors, () => (okFlags.ndSrc = false))),
-  ]);
+  ] = wants("nd")
+    ? await Promise.all([
+        timed("nd_pnp", () => getNdPnp(client, ndRollingDays)).catch(guard("PnP", ndErrors, () => (okFlags.ndPnp = false))),
+        timed("nd_spar", () => getSparNd(client, ndRollingDays)).catch(guard("SPAR", ndErrors, () => (okFlags.ndSpar = false))),
+        timed("nd_massbuild", () => getMassbuildNd(client, ndRollingDays)).catch(guard("MASSBUILD", ndErrors, () => (okFlags.ndMass = false))),
+        timed("nd_game", () => getGameNd(client, ndRollingDays)).catch(guard("GAME", ndErrors, () => (okFlags.ndGame = false))),
+        timed("nd_makro", () => getMakroNd(client, ndRollingDays)).catch(guard("MAKRO", ndErrors, () => (okFlags.ndMakro = false))),
+        timed("nd_src", () => getSrcNd(client, ndRollingDays)).catch(guard("SRC", ndErrors, () => (okFlags.ndSrc = false))),
+      ])
+    : [emptyRes, emptyRes, emptyRes, emptyRes, emptyRes, emptyRes];
 
   const [
     phantomPnpRes,
@@ -206,15 +275,15 @@ export async function runSyncForTenant(
     phantomMassRes,
     phantomGameRes,
     phantomMakroRes,
-    brandsRes,
-  ] = await Promise.all([
-    getPhantomStockPnp(client, phantomDays).catch(guard("PnP", phantomErrors, () => (okFlags.phantomPnp = false))),
-    getSrcPhantom(client, phantomDays).catch(guard("SRC", phantomErrors, () => (okFlags.phantomSrc = false))),
-    getMassbuildPhantom(client, phantomDays).catch(guard("MASSBUILD", phantomErrors, () => (okFlags.phantomMass = false))),
-    getGamePhantom(client, phantomDays).catch(guard("GAME", phantomErrors, () => (okFlags.phantomGame = false))),
-    getMakroPhantom(client, phantomDays).catch(guard("MAKRO", phantomErrors, () => (okFlags.phantomMakro = false))),
-    getClientBrands(client).catch(() => ({ data: [], count: 0 })),
-  ]);
+  ] = wants("phantom")
+    ? await Promise.all([
+        timed("phantom_stock_pnp", () => getPhantomStockPnp(client, phantomDays)).catch(guard("PnP", phantomErrors, () => (okFlags.phantomPnp = false))),
+        timed("phantom_src", () => getSrcPhantom(client, phantomDays)).catch(guard("SRC", phantomErrors, () => (okFlags.phantomSrc = false))),
+        timed("phantom_massbuild", () => getMassbuildPhantom(client, phantomDays)).catch(guard("MASSBUILD", phantomErrors, () => (okFlags.phantomMass = false))),
+        timed("phantom_game", () => getGamePhantom(client, phantomDays)).catch(guard("GAME", phantomErrors, () => (okFlags.phantomGame = false))),
+        timed("phantom_makro", () => getMakroPhantom(client, phantomDays)).catch(guard("MAKRO", phantomErrors, () => (okFlags.phantomMakro = false))),
+      ])
+    : [emptyRes, emptyRes, emptyRes, emptyRes, emptyRes];
 
   // Merge all channels' rows for the multi-channel KPIs. Each row carries its
   // own Channel, so the per-channel/store/product aggregation handles them all.
@@ -258,18 +327,24 @@ export async function runSyncForTenant(
   };
   // Sales/ND/OOS/Phantom are written if ANY channel returned data (so one
   // channel's failure never wipes the others).
+  // Gate on wants(): a KPI that wasn't part of this sync must NOT write (its
+  // existing blobs are preserved). A synced KPI writes if ANY channel returned.
   const salesOk =
-    okFlags.salesPnp || okFlags.salesSpar || okFlags.salesMass ||
-    okFlags.salesGame || okFlags.salesMakro || okFlags.salesSrc;
+    wants("sales") &&
+    (okFlags.salesPnp || okFlags.salesSpar || okFlags.salesMass ||
+      okFlags.salesGame || okFlags.salesMakro || okFlags.salesSrc);
   const ndOk =
-    okFlags.ndPnp || okFlags.ndSpar || okFlags.ndMass ||
-    okFlags.ndGame || okFlags.ndMakro || okFlags.ndSrc;
+    wants("nd") &&
+    (okFlags.ndPnp || okFlags.ndSpar || okFlags.ndMass ||
+      okFlags.ndGame || okFlags.ndMakro || okFlags.ndSrc);
   const oosOk =
-    okFlags.oosPnp || okFlags.oosMass || okFlags.oosGame ||
-    okFlags.oosMakro || okFlags.oosSrc;
+    wants("oos") &&
+    (okFlags.oosPnp || okFlags.oosMass || okFlags.oosGame ||
+      okFlags.oosMakro || okFlags.oosSrc);
   const phantomOk =
-    okFlags.phantomPnp || okFlags.phantomSrc || okFlags.phantomMass ||
-    okFlags.phantomGame || okFlags.phantomMakro;
+    wants("phantom") &&
+    (okFlags.phantomPnp || okFlags.phantomSrc || okFlags.phantomMass ||
+      okFlags.phantomGame || okFlags.phantomMakro);
   const salesError = salesErrors.join(" | ");
   const ndError = ndErrors.join(" | ");
   const oosError = oosErrors.join(" | ");
@@ -792,9 +867,6 @@ export async function runSyncForTenant(
     });
   }
 
-  // Extract brand list
-  const brands: string[] = brandsRes.data.map((b) => b.Brand);
-
   // ── Coverage: which entities have data, PER KPI ──
   // Row-driven: an entity is covered for a KPI only if it actually appears in
   // that KPI's source rows. So a channel whose OOS SP returns nothing shows "—"
@@ -821,21 +893,36 @@ export async function runSyncForTenant(
     return { channels: [...ch], stores: [...st], products: [...pr] };
   };
 
+  // Merge with existing coverage: only recompute the KPIs we actually synced,
+  // so a partial sync (e.g. sales-only) doesn't blank out the other KPIs'
+  // coverage (which would make them show "no data" on the scorecards).
+  type CoverSet = { channels: string[]; stores: string[]; products: string[] };
+  const existingCoverage = await readJson<Partial<Record<"sales" | "nd" | "oos" | "phantom", CoverSet>>>(
+    `${slug}/data/kpi/${period}/coverage.json`,
+    {}
+  );
+  const emptyCover: CoverSet = { channels: [], stores: [], products: [] };
   const coverage = {
-    sales: coverageFrom(salesRes.data),
-    nd: coverageFrom(dedupedNd),
-    oos: coverageFrom(oosRows),
-    phantom: coverageFrom(dedupedPhantom),
+    sales: wants("sales") ? coverageFrom(salesRes.data) : existingCoverage.sales ?? emptyCover,
+    nd: wants("nd") ? coverageFrom(dedupedNd) : existingCoverage.nd ?? emptyCover,
+    oos: wants("oos") ? coverageFrom(oosRows) : existingCoverage.oos ?? emptyCover,
+    phantom: wants("phantom") ? coverageFrom(dedupedPhantom) : existingCoverage.phantom ?? emptyCover,
   };
 
   // ── Write everything to blob ──
+  // Coverage is always written (it was merged above). Core master data is only
+  // rewritten when it was (re)fetched this run.
   const writes = [
-    writeJson(`${slug}/data/channels.json`, channels),
-    writeJson(`${slug}/data/stores.json`, stores),
-    writeJson(`${slug}/data/products.json`, products),
-    writeJson(`${slug}/data/brands.json`, brands),
     writeJson(`${slug}/data/kpi/${period}/coverage.json`, coverage),
   ];
+  if (coreFetched) {
+    writes.push(
+      writeJson(`${slug}/data/channels.json`, channels),
+      writeJson(`${slug}/data/stores.json`, stores),
+      writeJson(`${slug}/data/products.json`, products),
+      writeJson(`${slug}/data/brands.json`, brands)
+    );
+  }
 
   // Only overwrite Sales data when the SP succeeded (a failed call must not wipe
   // previously-synced sales with an empty set).
@@ -880,81 +967,112 @@ export async function runSyncForTenant(
 
   await Promise.all(writes);
 
+  const totalMs = Date.now() - syncStart;
+  // Append this run to the rolling sync log (last 50 runs). Each entry records
+  // per-query duration + row count + ok flag, so we can see which SP is slow.
+  const logEntry = {
+    at: now.toISOString(),
+    source,
+    parts,
+    totalMs,
+    queries: timings,
+  };
+  const syncLog = await readJson<unknown[]>(`${slug}/data/sync-log.json`, []);
+  syncLog.unshift(logEntry);
+  await writeJson(`${slug}/data/sync-log.json`, syncLog.slice(0, 50));
+
   // Save sync metadata
   const syncMeta = await readJson<Record<string, unknown>>(`${slug}/data/sync-meta.json`, {});
   syncMeta.lastSync = now.toISOString();
   syncMeta.lastSyncSource = source;
   if (source === "cron") syncMeta.lastAutoSync = now.toISOString();
   syncMeta.lastPeriod = period;
-  syncMeta.channelCount = channels.length;
-  syncMeta.storeCount = stores.length;
-  syncMeta.productCount = products.length;
-  syncMeta.brandCount = brands.length;
-  if (salesOk) {
-    syncMeta.salesChannelCount = salesChannels.length;
-    syncMeta.salesStoreCount = salesStores.length;
-    syncMeta.salesProductCount = salesProducts.length;
-    syncMeta.salesDetailCount = salesDetailRows.length;
-    syncMeta.salesRowCount = salesRes.data.length;
+  syncMeta.lastSyncDurationMs = totalMs;
+  syncMeta.lastSyncQueryTimings = timings;
+  syncMeta.lastSyncParts = parts;
+  // Only touch the fields for parts we actually synced — a partial sync must not
+  // clobber the other parts' recorded counts / ok-flags.
+  if (coreFetched) {
+    syncMeta.channelCount = channels.length;
+    syncMeta.storeCount = stores.length;
+    syncMeta.productCount = products.length;
+    syncMeta.brandCount = brands.length;
   }
-  syncMeta.salesOk = salesOk;
-  syncMeta.salesPnpOk = salesPnpOk;
-  syncMeta.salesSparOk = salesSparOk;
-  syncMeta.salesMassbuildOk = okFlags.salesMass;
-  syncMeta.salesGameOk = okFlags.salesGame;
-  syncMeta.salesMakroOk = okFlags.salesMakro;
-  syncMeta.salesSrcOk = okFlags.salesSrc;
-  syncMeta.salesError = salesError;
-  if (oosOk) syncMeta.oosDetailCount = oosDetailRows.length;
-  syncMeta.oosOk = oosOk;
-  syncMeta.oosPnpOk = okFlags.oosPnp;
-  syncMeta.oosMassbuildOk = okFlags.oosMass;
-  syncMeta.oosGameOk = okFlags.oosGame;
-  syncMeta.oosMakroOk = okFlags.oosMakro;
-  syncMeta.oosSrcOk = okFlags.oosSrc;
-  syncMeta.oosError = oosError;
-  if (ndOk) syncMeta.ndDetailCount = ndDetailRows.length;
-  syncMeta.ndOk = ndOk;
-  syncMeta.ndPnpOk = ndPnpOk;
-  syncMeta.ndSparOk = ndSparOk;
-  syncMeta.ndMassbuildOk = okFlags.ndMass;
-  syncMeta.ndGameOk = okFlags.ndGame;
-  syncMeta.ndMakroOk = okFlags.ndMakro;
-  syncMeta.ndSrcOk = okFlags.ndSrc;
-  syncMeta.ndError = ndError;
-  // Record the scan window actually used so the ND page can show it.
-  if (ndOk) syncMeta.ndRollingDays = ndRollingDays;
-  if (phantomOk) syncMeta.phantomDetailCount = phantomRows.length;
-  syncMeta.phantomOk = phantomOk;
-  syncMeta.phantomPnpOk = okFlags.phantomPnp;
-  syncMeta.phantomSrcOk = okFlags.phantomSrc;
-  syncMeta.phantomMassbuildOk = okFlags.phantomMass;
-  syncMeta.phantomGameOk = okFlags.phantomGame;
-  syncMeta.phantomMakroOk = okFlags.phantomMakro;
-  syncMeta.phantomError = phantomError;
-  // Record the lookback window actually used so the Phantom page can show it.
-  if (phantomOk) syncMeta.phantomDays = phantomDays;
-  syncMeta.phantomBasis = hasRanging ? "ranged (range file)" : "legacy (stores×products)";
-  syncMeta.rangedChannels = ranging.map((r) => r.channel);
+  if (wants("sales")) {
+    if (salesOk) {
+      syncMeta.salesChannelCount = salesChannels.length;
+      syncMeta.salesStoreCount = salesStores.length;
+      syncMeta.salesProductCount = salesProducts.length;
+      syncMeta.salesDetailCount = salesDetailRows.length;
+      syncMeta.salesRowCount = salesRes.data.length;
+    }
+    syncMeta.salesOk = salesOk;
+    syncMeta.salesPnpOk = salesPnpOk;
+    syncMeta.salesSparOk = salesSparOk;
+    syncMeta.salesMassbuildOk = okFlags.salesMass;
+    syncMeta.salesGameOk = okFlags.salesGame;
+    syncMeta.salesMakroOk = okFlags.salesMakro;
+    syncMeta.salesSrcOk = okFlags.salesSrc;
+    syncMeta.salesError = salesError;
+  }
+  if (wants("oos")) {
+    if (oosOk) syncMeta.oosDetailCount = oosDetailRows.length;
+    syncMeta.oosOk = oosOk;
+    syncMeta.oosPnpOk = okFlags.oosPnp;
+    syncMeta.oosMassbuildOk = okFlags.oosMass;
+    syncMeta.oosGameOk = okFlags.oosGame;
+    syncMeta.oosMakroOk = okFlags.oosMakro;
+    syncMeta.oosSrcOk = okFlags.oosSrc;
+    syncMeta.oosError = oosError;
+  }
+  if (wants("nd")) {
+    if (ndOk) syncMeta.ndDetailCount = ndDetailRows.length;
+    syncMeta.ndOk = ndOk;
+    syncMeta.ndPnpOk = ndPnpOk;
+    syncMeta.ndSparOk = ndSparOk;
+    syncMeta.ndMassbuildOk = okFlags.ndMass;
+    syncMeta.ndGameOk = okFlags.ndGame;
+    syncMeta.ndMakroOk = okFlags.ndMakro;
+    syncMeta.ndSrcOk = okFlags.ndSrc;
+    syncMeta.ndError = ndError;
+    // Record the scan window actually used so the ND page can show it.
+    if (ndOk) syncMeta.ndRollingDays = ndRollingDays;
+  }
+  if (wants("phantom")) {
+    if (phantomOk) syncMeta.phantomDetailCount = phantomRows.length;
+    syncMeta.phantomOk = phantomOk;
+    syncMeta.phantomPnpOk = okFlags.phantomPnp;
+    syncMeta.phantomSrcOk = okFlags.phantomSrc;
+    syncMeta.phantomMassbuildOk = okFlags.phantomMass;
+    syncMeta.phantomGameOk = okFlags.phantomGame;
+    syncMeta.phantomMakroOk = okFlags.phantomMakro;
+    syncMeta.phantomError = phantomError;
+    // Record the lookback window actually used so the Phantom page can show it.
+    if (phantomOk) syncMeta.phantomDays = phantomDays;
+    syncMeta.phantomBasis = hasRanging ? "ranged (range file)" : "legacy (stores×products)";
+    syncMeta.rangedChannels = ranging.map((r) => r.channel);
+  }
   syncMeta.sqlClient = client;
   await writeJson(`${slug}/data/sync-meta.json`, syncMeta);
 
+  const skipped = "(skipped)";
   return {
     period,
-    phantomSkipped: !phantomOk,
+    parts,
+    phantomSkipped: wants("phantom") && !phantomOk,
     phantomError: phantomOk ? undefined : phantomError,
     counts: {
       channels: channels.length,
       stores: stores.length,
       products: products.length,
       brands: brands.length,
-      salesChannels: salesOk ? salesChannels.length : "(unchanged — SP failed)",
-      salesStores: salesOk ? salesStores.length : "(unchanged — SP failed)",
-      salesProducts: salesOk ? salesProducts.length : "(unchanged — SP failed)",
-      salesDetail: salesOk ? salesDetailRows.length : "(unchanged — SP failed)",
-      oosDetail: oosOk ? oosDetailRows.length : "(unchanged — SP failed)",
-      ndDetail: ndOk ? ndDetailRows.length : "(unchanged — SP failed)",
-      phantomDetail: phantomOk ? phantomRows.length : "(unchanged — SP failed)",
+      salesChannels: !wants("sales") ? skipped : salesOk ? salesChannels.length : "(unchanged — SP failed)",
+      salesStores: !wants("sales") ? skipped : salesOk ? salesStores.length : "(unchanged — SP failed)",
+      salesProducts: !wants("sales") ? skipped : salesOk ? salesProducts.length : "(unchanged — SP failed)",
+      salesDetail: !wants("sales") ? skipped : salesOk ? salesDetailRows.length : "(unchanged — SP failed)",
+      oosDetail: !wants("oos") ? skipped : oosOk ? oosDetailRows.length : "(unchanged — SP failed)",
+      ndDetail: !wants("nd") ? skipped : ndOk ? ndDetailRows.length : "(unchanged — SP failed)",
+      phantomDetail: !wants("phantom") ? skipped : phantomOk ? phantomRows.length : "(unchanged — SP failed)",
     },
   };
 }

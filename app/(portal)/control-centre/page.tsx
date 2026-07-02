@@ -19,10 +19,19 @@ const GROWTH_METRICS: { value: SalesGrowthMetric; label: string; disabled?: bool
   { value: "tm_vs_lm", label: "TM vs LM (this month vs last month)" },
 ];
 
+interface QueryTiming {
+  ms: number;
+  rows: number;
+  ok: boolean;
+  error?: string;
+}
+
 interface SyncMeta {
   lastSync?: string;
   lastAutoSync?: string;
   lastSyncSource?: "manual" | "cron";
+  lastSyncDurationMs?: number;
+  lastSyncQueryTimings?: Record<string, QueryTiming>;
   channelCount?: number;
   storeCount?: number;
   productCount?: number;
@@ -33,6 +42,27 @@ interface SyncMeta {
   oosDetailCount?: number;
   phantomDetailCount?: number;
   ndDetailCount?: number;
+}
+
+type SyncPart = "core" | "sales" | "oos" | "nd" | "phantom";
+const SYNC_PARTS: { key: SyncPart; label: string }[] = [
+  { key: "core", label: "Master data" },
+  { key: "sales", label: "Sales" },
+  { key: "oos", label: "Out of Stock" },
+  { key: "nd", label: "Numerical Dist." },
+  { key: "phantom", label: "Phantom" },
+];
+
+interface SyncLogEntry {
+  at: string;
+  source: string;
+  parts: string[];
+  totalMs: number;
+  queries: Record<string, QueryTiming>;
+}
+
+function fmtMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
 
 export default function ControlCentrePage() {
@@ -49,6 +79,16 @@ export default function ControlCentrePage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(null);
+  // Which parts to include when clicking Sync Now (all on by default).
+  const [syncSel, setSyncSel] = useState<Record<SyncPart, boolean>>({
+    core: true,
+    sales: true,
+    oos: true,
+    nd: true,
+    phantom: true,
+  });
+  const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
+  const [showLog, setShowLog] = useState(false);
 
   // Phantom config
   const [phantomDays, setPhantomDays] = useState(60);
@@ -87,6 +127,13 @@ export default function ControlCentrePage() {
       authFetch("/api/sync")
         .then((r) => r.json())
         .then((data) => setSyncMeta(data))
+        .catch(() => {});
+
+      authFetch("/api/sync/log")
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data.log)) setSyncLog(data.log);
+        })
         .catch(() => {});
 
       authFetch("/api/tenant-config/phantom")
@@ -189,34 +236,51 @@ export default function ControlCentrePage() {
     }
   }
 
-  async function runSync() {
+  async function refreshSyncState() {
+    try {
+      const [metaRes, logRes] = await Promise.all([
+        authFetch("/api/sync"),
+        authFetch("/api/sync/log"),
+      ]);
+      setSyncMeta(await metaRes.json());
+      const log = await logRes.json();
+      if (Array.isArray(log.log)) setSyncLog(log.log);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Sync the given parts (or the checkbox selection). Each part runs as its OWN
+  // request so a full sync never exceeds the serverless time limit — one slow
+  // SP can't drag the whole thing past the ceiling.
+  async function runSync(partsOverride?: SyncPart[]) {
+    const parts = partsOverride
+      ? partsOverride
+      : SYNC_PARTS.filter((p) => syncSel[p.key]).map((p) => p.key);
+    if (!parts.length) {
+      setSyncMessage("Select at least one thing to sync.");
+      return;
+    }
     setSyncing(true);
     setSyncMessage("");
     try {
-      const res = await authFetch("/api/sync", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        setSyncMessage(
-          `Synced: ${data.counts.channels} channels, ${data.counts.stores} stores, ${data.counts.products} products, ${data.counts.salesDetail} sales, ${data.counts.oosDetail} OOS, ${data.counts.ndDetail} ND, ${data.counts.phantomDetail} phantom`
-        );
-        setSyncMeta((prev) => ({
-          ...prev,
-          lastSync: new Date().toISOString(),
-          lastSyncSource: "manual",
-          channelCount: data.counts.channels,
-          storeCount: data.counts.stores,
-          productCount: data.counts.products,
-          brandCount: data.counts.brands,
-          salesChannelCount: data.counts.salesChannels,
-          salesStoreCount: data.counts.salesStores,
-          salesProductCount: data.counts.salesProducts,
-          oosDetailCount: data.counts.oosDetail,
-          phantomDetailCount: data.counts.phantomDetail,
-          ndDetailCount: data.counts.ndDetail,
-        }));
-      } else {
-        setSyncMessage(data.error || "Sync failed");
+      const done: SyncPart[] = [];
+      for (const part of parts) {
+        setSyncMessage(`Syncing ${part}… (${done.length + 1}/${parts.length})`);
+        const res = await authFetch("/api/sync", {
+          method: "POST",
+          body: JSON.stringify({ parts: [part] }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setSyncMessage(`Failed on ${part}: ${data.error || `HTTP ${res.status}`}`);
+          await refreshSyncState();
+          return;
+        }
+        done.push(part);
       }
+      setSyncMessage(`Synced: ${done.join(", ")}`);
+      await refreshSyncState();
     } catch {
       setSyncMessage("Network error during sync");
     } finally {
@@ -236,8 +300,8 @@ export default function ControlCentrePage() {
         // The lookback only changes the phantom data once a sync re-runs the SP,
         // so kick off a resync — fire-and-forget so the Save button releases
         // immediately and the Data Sync section shows its own progress.
-        setPhantomMessage("Saved · re-syncing in the background…");
-        void runSync();
+        setPhantomMessage("Saved · re-syncing phantom in the background…");
+        void runSync(["phantom"]);
       } else {
         setPhantomMessage("Failed to save");
       }
@@ -260,8 +324,8 @@ export default function ControlCentrePage() {
         // The scan window only changes the ND data once a sync re-runs the SP,
         // so kick off a resync — fire-and-forget so the Save button releases
         // immediately and the Data Sync section shows its own progress.
-        setNdMessage("Saved · re-syncing in the background…");
-        void runSync();
+        setNdMessage("Saved · re-syncing ND in the background…");
+        void runSync(["nd"]);
       } else {
         setNdMessage("Failed to save");
       }
@@ -696,20 +760,139 @@ export default function ControlCentrePage() {
           </>
         )}
 
-        <div className="flex items-center gap-3">
+        {/* Pick what to sync — each runs as its own request, so you can refresh
+            just Sales (fast) without re-pulling everything. */}
+        <div className="mb-3">
+          <p className="text-xs font-medium text-[var(--color-text-muted)] mb-2">
+            What to sync
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {SYNC_PARTS.map((p) => {
+              const on = syncSel[p.key];
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  disabled={syncing}
+                  onClick={() => setSyncSel((s) => ({ ...s, [p.key]: !s[p.key] }))}
+                  className={`px-3 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50 ${
+                    on
+                      ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]"
+                      : "bg-white text-[var(--color-text-muted)] border-[var(--color-border)]"
+                  }`}
+                >
+                  {on ? "✓ " : ""}
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={runSync}
+            onClick={() => runSync()}
             disabled={syncing}
             className="px-6 py-2 rounded-lg bg-[var(--color-primary)] text-sm font-medium text-white disabled:opacity-50"
           >
             {syncing ? "Syncing..." : "Sync Now"}
           </button>
+          <button
+            onClick={() => {
+              setSyncSel({ core: true, sales: true, oos: true, nd: true, phantom: true });
+              runSync(["core", "sales", "oos", "nd", "phantom"]);
+            }}
+            disabled={syncing}
+            className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-sm font-medium text-[var(--color-text)] disabled:opacity-50"
+          >
+            Sync All
+          </button>
+          {syncMeta?.lastSyncDurationMs != null && (
+            <span className="text-xs text-[var(--color-text-muted)]">
+              last run: {fmtMs(syncMeta.lastSyncDurationMs)}
+            </span>
+          )}
           {syncMessage && (
-            <span className={`text-sm ${syncMessage.includes("Synced") ? "text-green-600" : "text-red-600"}`}>
+            <span className={`text-sm ${syncMessage.startsWith("Synced") ? "text-green-600" : syncMessage.startsWith("Syncing") ? "text-[var(--color-text-muted)]" : "text-red-600"}`}>
               {syncMessage}
             </span>
           )}
         </div>
+
+        {/* Per-query timings from the most recent run */}
+        {syncMeta?.lastSyncQueryTimings &&
+          Object.keys(syncMeta.lastSyncQueryTimings).length > 0 && (
+            <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-[var(--color-text-muted)]">
+                  Query timings (last run)
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowLog((v) => !v)}
+                  className="text-xs text-[var(--color-primary)] hover:underline"
+                >
+                  {showLog ? "Hide history" : `History (${syncLog.length})`}
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="text-xs w-full">
+                  <thead className="text-[var(--color-text-muted)] text-left">
+                    <tr>
+                      <th className="py-1 pr-4 font-medium">Query</th>
+                      <th className="py-1 pr-4 font-medium text-right">Duration</th>
+                      <th className="py-1 pr-4 font-medium text-right">Rows</th>
+                      <th className="py-1 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(syncMeta.lastSyncQueryTimings)
+                      .sort((a, b) => b[1].ms - a[1].ms)
+                      .map(([q, t]) => (
+                        <tr key={q} className="border-t border-[var(--color-border)]/60">
+                          <td className="py-1 pr-4 font-mono">{q}</td>
+                          <td className="py-1 pr-4 text-right">{fmtMs(t.ms)}</td>
+                          <td className="py-1 pr-4 text-right">{t.rows.toLocaleString()}</td>
+                          <td className="py-1">
+                            {t.ok ? (
+                              <span className="text-green-600">ok</span>
+                            ) : (
+                              <span className="text-red-600" title={t.error}>failed</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {showLog && (
+                <div className="mt-4 space-y-3">
+                  {syncLog.map((entry, i) => (
+                    <div key={i} className="rounded-lg border border-[var(--color-border)] p-3">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-medium text-[var(--color-text)]">
+                          {new Date(entry.at).toLocaleString()}
+                        </span>
+                        <span className="text-[var(--color-text-muted)]">
+                          {entry.source} · {entry.parts.join(", ")} · {fmtMs(entry.totalMs)}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-[var(--color-text-muted)] font-mono">
+                        {Object.entries(entry.queries)
+                          .sort((a, b) => b[1].ms - a[1].ms)
+                          .map(([q, t]) => (
+                            <span key={q} className={t.ok ? "" : "text-red-600"}>
+                              {q} {fmtMs(t.ms)}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
       </section>
 
       {/* Module Status */}

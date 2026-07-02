@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { requireRole, handleAuthError, noCacheHeaders } from "@/lib/auth";
 import { getTenantSlug } from "@/lib/getTenantSlug";
 import { readJson } from "@/lib/blob";
-import { runSyncForTenant } from "@/lib/runSync";
+import { runSyncForTenant, ALL_SYNC_PARTS, type SyncPart } from "@/lib/runSync";
 
 // SPAR's sales SP is heavy (~100s on the primary server); give the whole sync
 // plenty of headroom (matches the cron route).
@@ -13,7 +13,21 @@ export async function POST(req: NextRequest) {
     requireRole(req, "admin");
     const slug = await getTenantSlug();
 
-    const result = await runSyncForTenant(slug);
+    // Optional { parts: [...] } body scopes the sync to specific KPIs/master
+    // data (default = everything). Invalid entries are dropped; an empty/absent
+    // list falls back to a full sync.
+    const body = (await req.json().catch(() => ({}))) as { parts?: unknown };
+    const parts: SyncPart[] | undefined = Array.isArray(body?.parts)
+      ? (body.parts.filter((p): p is SyncPart =>
+          (ALL_SYNC_PARTS as string[]).includes(p as string)
+        ))
+      : undefined;
+
+    const result = await runSyncForTenant(
+      slug,
+      "manual",
+      parts && parts.length ? { parts } : {}
+    );
 
     return Response.json(
       {
