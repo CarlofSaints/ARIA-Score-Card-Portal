@@ -35,6 +35,7 @@ import type {
   ScorecardProduct,
   SalesData,
   SalesDetailRow,
+  MonthSales,
   PhantomDetailRow,
   OosDetailRow,
   NdDetailRow,
@@ -630,6 +631,79 @@ export async function runSyncForTenant(
     });
   }
 
+  // Deferred write of the accumulated monthly history (pushed with the other
+  // sales writes only when the sales SP actually succeeded).
+  let salesHistoryWrite: ReturnType<typeof writeJson> | null = null;
+
+  // ── Persist monthly sales history across syncs ──
+  // The SP only returns a prior-year figure (PY MTD) for the CURRENT month. Once
+  // a month rolls out of the SP window we can never re-fetch its same-month-last-
+  // year value — so we bank it while the month is live and keep it forever. Each
+  // month's `value` takes the freshest reading (a later PMTD pass gives the full
+  // settled month), while `pyValue` is preserved from whenever it was captured.
+  // Result: in August you still have June (value + June-last-year).
+  if (wants("sales")) {
+    const monthlyHistoryKey = `${slug}/data/sales/monthly-history.json`;
+    const historyIn = await readJson<Record<string, Record<string, MonthSales>>>(
+      monthlyHistoryKey,
+      {}
+    );
+
+    // Backfill from older period snapshots: their MTD == that period's month and
+    // they carry PY MTD, so we can recover months captured before this feature
+    // existed (e.g. PnP/SRC June, whose PY is gone from the current pull). Only
+    // fills gaps — never clobbers a value we already hold.
+    for (let i = 1; i <= 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const p = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (p === period) continue;
+      const oldRows = await readJson<SalesDetailRow[]>(`${slug}/data/sales/${p}/detail.json`, []);
+      for (const r of oldRows) {
+        const key = `${r.level}|${r.entityId}`;
+        const h = (historyIn[key] ||= {});
+        const py = r.pyMtdValue || 0;
+        if (!h[p]) {
+          h[p] = { value: r.mtdValue || 0, units: r.mtdUnits || 0, pyValue: py, pyUnits: r.pyMtdUnits || 0 };
+        } else if (!(h[p].pyValue > 0) && py > 0) {
+          h[p].pyValue = py;
+          h[p].pyUnits = r.pyMtdUnits || 0;
+        }
+      }
+    }
+
+    const historyOut: Record<string, Record<string, MonthSales>> = {};
+    const MAX_MONTHS = 24;
+    const resolveMonths = (
+      key: string,
+      incoming: Record<string, MonthSales>
+    ): Record<string, MonthSales> => {
+      const merged: Record<string, MonthSales> = {};
+      const existing = historyIn[key] || {};
+      for (const [m, v] of Object.entries(existing)) merged[m] = { ...v };
+      for (const [m, inc] of Object.entries(incoming)) {
+        const e = merged[m] || { value: 0, units: 0, pyValue: 0, pyUnits: 0 };
+        merged[m] = {
+          value: inc.value,
+          units: inc.units,
+          // Keep a previously-banked prior-year value if this pass didn't supply one.
+          pyValue: inc.pyValue > 0 ? inc.pyValue : e.pyValue,
+          pyUnits: inc.pyUnits > 0 ? inc.pyUnits : e.pyUnits,
+        };
+      }
+      const capped: Record<string, MonthSales> = {};
+      for (const m of Object.keys(merged).sort().reverse().slice(0, MAX_MONTHS)) capped[m] = merged[m];
+      historyOut[key] = capped;
+      return capped;
+    };
+
+    for (const r of salesDetailRows) {
+      r.months = resolveMonths(`${r.level}|${r.entityId}`, r.months || {});
+    }
+
+    // Written below only when the sales SP succeeded (see the sales writes block).
+    salesHistoryWrite = writeJson(monthlyHistoryKey, historyOut);
+  }
+
   // ── Aggregate OOS (GetOutOfStock_PNP — PnP channel) ──
   // The SP returns per site-SKU rows it flags as out of stock. SiteCode maps to
   // a store (store.id === SiteCode) and "Product ID" to a product (product.id
@@ -979,6 +1053,7 @@ export async function runSyncForTenant(
       writeJson(`${slug}/data/sales/${period}/products.json`, salesProducts),
       writeJson(`${slug}/data/sales/${period}/detail.json`, salesDetailRows)
     );
+    if (salesHistoryWrite) writes.push(salesHistoryWrite);
   }
 
   // Only overwrite OOS data when the SP succeeded.
