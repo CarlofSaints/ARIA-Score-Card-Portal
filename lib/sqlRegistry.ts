@@ -177,11 +177,14 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     kind: "stored_procedure",
     status: "live",
     purpose:
-      "PnP sales: one row per site-SKU with YTD and MTD value/units plus prior-year (PY) comparatives. SPLY = PY YTD. The SP computes its own windows (returns YTDStartDate/MTDStartDate/MaxDate per row); the sync aggregates to channel/store/product. Note: the *Units columns come back as strings. Runs on the secondary (phantom) server. This is the live sales source (the ytd_sales_by_* queries above read the empty tblFactData and are superseded for PnP).",
+      "PnP sales: one row per site-SKU with YTD/MTD value/units plus prior-year (PY) comparatives AND full-month totals — PFM (Previous FULL Month, whole prior calendar month) and PY FM (Prior-Year FULL Month, whole anchor month last year). SPLY = PY YTD. The SP computes its own windows (returns YTDStartDate/MTDStartDate/MaxDate per row); pass optional @YearMonth ('YYYY-MM') to anchor the report to a chosen month-end. The sync aggregates to channel/store/product and banks PFM/PY FM into the monthly-history so a settled month shows its FULL total (not day-clamped MTD). Note: the *Units columns come back as strings. Runs on the secondary (phantom) server.",
     server: POOL2,
     database: DB,
-    params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
-    sql: "EXEC [GetDataForCustomDev_PNP_Sales] @ClientName = @client\n-- returns: MaxDate, YTDStartDate, MTDStartDate, SiteCode, SiteName, Channel, SubChannel,\n-- Province, ChannelArticle, [Product ID], [Product Description], [Product Brand], [Product Status],\n-- [Channel Product Status], [Ranging Status], [YTD Units], [YTD Value], [PY YTD Units], [PY YTD Value],\n-- [MTD Units], [MTD Value], [PMTD Units], [PMTD Value] (PMTD = last month / LM), [PY MTD Units], [PY MTD Value]",
+    params: [
+      { name: "client", description: "Client name, e.g. HENKEL" },
+      { name: "yearMonth", description: "Optional 'YYYY-MM' anchor month; omit for latest data" },
+    ],
+    sql: "EXEC [dbo].[GetDataForCustomDev_PNP_Sales] @ClientName = @client[, @YearMonth = @yearMonth]\n-- returns: MaxDate, YTDStartDate, MTDStartDate, SiteCode, SiteName, Channel, SubChannel,\n-- Province, ChannelArticle, [Product ID], [Product Description], [Product Brand], [Product Status],\n-- [Channel Product Status], [Ranging Status], [YTD Units], [YTD Value], [PY YTD Units], [PY YTD Value],\n-- [MTD Units], [MTD Value], [PMTD Units], [PMTD Value] (PMTD = last month TO-DATE / LM),\n-- [PFM Units], [PFM Value] (Previous FULL Month), [PY MTD Units], [PY MTD Value],\n-- [PY FM Units], [PY FM Value] (Prior-Year FULL Month)\n-- @YearMonth is only sent when a caller supplies it; the sync omits it (latest data).",
     usedBy:
       "Sync → sales/<period>/{channels,stores,products,detail}.json; Sales page, scorecards",
   },

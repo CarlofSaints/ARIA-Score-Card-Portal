@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
-import type { SalesDetailRow } from "@/lib/types";
+import type { SalesDetailRow, MonthSales } from "@/lib/types";
 
 // View is "ytd" or a specific calendar month key "YYYY-MM".
 type SortKey = "name" | "level" | "channelName" | "value" | "units" | "prev" | "growth";
@@ -73,16 +73,24 @@ export default function SalesPage() {
   const isYtd = view === "ytd";
   const mrow = (r: SalesDetailRow) => r.months?.[view];
 
-  // Row accessors switch between YTD and a specific calendar month. A month is
-  // resolved per entity from the SP's MTD/PMTD windows (so it's the real month,
-  // not just a label).
-  const val = (r: SalesDetailRow) => (isYtd ? r.ytdValue : mrow(r)?.value ?? 0);
-  const units = (r: SalesDetailRow) => (isYtd ? r.ytdUnits : mrow(r)?.units ?? 0);
-  const prev = (r: SalesDetailRow) => (isYtd ? r.splyValue : mrow(r)?.pyValue ?? 0);
+  // A month is "live" (still in progress) when it's explicitly not complete —
+  // then we read its to-date (partial) figures, which compare like-for-like
+  // against the prior year to-date. A SETTLED month reads its FULL calendar-month
+  // value (from the SP's PFM field) and its FULL prior-year (PY FM).
+  const mLive = (m?: MonthSales) => !!m && m.complete === false;
+  const mVal = (m?: MonthSales) => (m ? (mLive(m) ? m.partialValue ?? 0 : m.value) : 0);
+  const mUnits = (m?: MonthSales) => (m ? (mLive(m) ? m.partialUnits ?? 0 : m.units) : 0);
+  const mPrev = (m?: MonthSales) => (m ? (mLive(m) ? m.partialPyValue ?? 0 : m.pyValue) : 0);
+
+  // Row accessors switch between YTD and a specific calendar month.
+  const val = (r: SalesDetailRow) => (isYtd ? r.ytdValue : mVal(mrow(r)));
+  const units = (r: SalesDetailRow) => (isYtd ? r.ytdUnits : mUnits(mrow(r)));
+  const prev = (r: SalesDetailRow) => (isYtd ? r.splyValue : mPrev(mrow(r)));
   const grow = (r: SalesDetailRow): number | null => {
     if (isYtd) return r.growthPercent;
-    const p = mrow(r)?.pyValue ?? 0;
-    const v = mrow(r)?.value ?? 0;
+    const m = mrow(r);
+    const p = mPrev(m);
+    const v = mVal(m);
     return p > 0 ? Math.round(((v - p) / p) * 1000) / 10 : null;
   };
 
@@ -97,6 +105,14 @@ export default function SalesPage() {
         .reverse(),
     [baseRows]
   );
+
+  // The live (in-progress) month = the newest month still marked not-complete
+  // for some entity. Its figures are to-date, not a full calendar month.
+  const liveMonth = useMemo(
+    () => months.find((m) => baseRows.some((r) => r.months?.[m]?.complete === false)) || "",
+    [months, baseRows]
+  );
+  const selectedLive = !isYtd && view === liveMonth;
 
   const channels = useMemo(
     () => Array.from(new Set(baseRows.map((r) => r.channelName).filter(Boolean))).sort(),
@@ -121,7 +137,22 @@ export default function SalesPage() {
     () => Array.from(new Set(filtered.map((r) => r.maxDate).filter(Boolean))).sort() as string[],
     [filtered]
   );
-  const showMismatch = !isYtd && maxDates.length > 1;
+  // Only a genuine problem when the selected month is a FULL month for some
+  // entities but still LIVE (to-date) for others — then the total mixes a whole
+  // calendar month with a partial slice. Differing MaxDates on settled months are
+  // harmless (every entity reports its full month), so don't warn on those.
+  const showMismatch = useMemo(() => {
+    if (isYtd) return false;
+    let hasComplete = false;
+    let hasLive = false;
+    for (const r of filtered) {
+      const m = r.months?.[view];
+      if (!m) continue;
+      if (m.complete === false) hasLive = true;
+      else hasComplete = true;
+    }
+    return hasComplete && hasLive;
+  }, [filtered, view, isYtd]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -158,10 +189,11 @@ export default function SalesPage() {
     else { setSortKey(k); setSortDir(k === "name" || k === "channelName" || k === "level" ? "asc" : "desc"); }
   }
 
+  const liveSuffix = selectedLive ? " (to date)" : "";
   const viewLabel = isYtd ? "YTD" : monthLabel(view);
-  const valLabel = `${viewLabel} Value`;
-  const unitsLabel = `${viewLabel} Units`;
-  const prevLabel = isYtd ? "SPLY Value" : `PY ${viewLabel}`;
+  const valLabel = `${viewLabel} Value${liveSuffix}`;
+  const unitsLabel = `${viewLabel} Units${liveSuffix}`;
+  const prevLabel = isYtd ? "SPLY Value" : `PY ${viewLabel}${liveSuffix}`;
   const colLabel = (key: SortKey, fallback: string) =>
     key === "value" ? valLabel : key === "units" ? unitsLabel : key === "prev" ? prevLabel : fallback;
 
@@ -175,7 +207,7 @@ export default function SalesPage() {
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
             {isYtd
               ? "Year-to-date sales vs same period last year (SPLY)"
-              : `${viewLabel} sales vs the same month last year`}
+              : `${viewLabel} ${selectedLive ? "month-to-date" : "full month"} sales vs the same month last year`}
             {!isYtd && maxDates.length === 1 ? ` · data as of ${maxDates[0]}` : ""}
           </p>
         </div>
@@ -190,6 +222,7 @@ export default function SalesPage() {
             {months.map((m) => (
               <option key={m} value={m}>
                 {monthLabel(m)}
+                {m === liveMonth ? " (to date)" : ""}
               </option>
             ))}
           </select>

@@ -321,15 +321,26 @@ export interface SqlSalesPnpRow {
   "PY YTD Value": number | string;
   "MTD Units": number | string;
   "MTD Value": number | string;
-  // PMTD = Previous Month To Date (last calendar month) — the LM comparator.
+  // PMTD = Previous Month To Date (last calendar month, day-clamped) — the LM comparator.
   "PMTD Units": number | string;
   "PMTD Value": number | string;
+  // PFM = Previous FULL Month (whole previous calendar month, NOT day-clamped).
+  // This is the authoritative full-month total for the month before the anchor.
+  "PFM Units": number | string;
+  "PFM Value": number | string;
   "PY MTD Units": number | string;
   "PY MTD Value": number | string;
+  // PY FM = Prior-Year FULL Month (the whole anchor month, one year back).
+  "PY FM Units": number | string;
+  "PY FM Value": number | string;
 }
 
-export async function getSalesPnp(client: string) {
-  return sqlQuery<SqlSalesPnpRow>("sales_pnp", { client });
+// All six sales SPs take an optional @YearMonth ("YYYY-MM") second parameter.
+// Null/omitted = latest data (anchor = the client's latest sale — original
+// behaviour). Supplied = the report is rolled back to the end of that month, so
+// every window (YTD/MTD/PMTD/PFM/PY…) shifts to be "as at" that month-end.
+export async function getSalesPnp(client: string, yearMonth?: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_pnp", { client, yearMonth });
 }
 
 // ── SPAR channel SPs (primary .234 server) ───────────────────────────────────
@@ -337,8 +348,8 @@ export async function getSalesPnp(client: string) {
 // SPAR ND mirrors PnP ND (Numerical Distributed flag). SPAR has NO SOH, so there
 // is no SPAR OOS or Phantom — those KPIs stay blank for SPAR and their points
 // redistribute over the available KPIs (see scoreEngine.buildEntityScore).
-export async function getSparSales(client: string) {
-  return sqlQuery<SqlSalesPnpRow>("sales_spar", { client });
+export async function getSparSales(client: string, yearMonth?: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_spar", { client, yearMonth });
 }
 
 export async function getSparNd(client: string, scanRange = 60) {
@@ -349,16 +360,16 @@ export async function getSparNd(client: string, scanRange = 60) {
 // Same column set as PnP/SPAR sales (Channel = MASSBUILD/GAME/MAKRO). These
 // channels currently expose Sales only — no ND/OOS/Phantom — so their points
 // redistribute onto Sales in the scorecard.
-export async function getMassbuildSales(client: string) {
-  return sqlQuery<SqlSalesPnpRow>("sales_massbuild", { client });
+export async function getMassbuildSales(client: string, yearMonth?: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_massbuild", { client, yearMonth });
 }
 
-export async function getGameSales(client: string) {
-  return sqlQuery<SqlSalesPnpRow>("sales_game", { client });
+export async function getGameSales(client: string, yearMonth?: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_game", { client, yearMonth });
 }
 
-export async function getMakroSales(client: string) {
-  return sqlQuery<SqlSalesPnpRow>("sales_makro", { client });
+export async function getMakroSales(client: string, yearMonth?: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_makro", { client, yearMonth });
 }
 
 // ── MASSBUILD / GAME / MAKRO — Out of Stock (pool2 / .2 server) ───────────────
@@ -410,8 +421,8 @@ export async function getMakroPhantom(client: string, phantomDays = 60) {
 // One SP per KPI covers BOTH banners; each row carries its own Channel
 // (CHECKERS / SHOPRITE) so the per-channel aggregation splits them into two
 // channel rows automatically. Row shapes mirror the PnP SPs.
-export async function getSrcSales(client: string) {
-  return sqlQuery<SqlSalesPnpRow>("sales_src", { client });
+export async function getSrcSales(client: string, yearMonth?: string) {
+  return sqlQuery<SqlSalesPnpRow>("sales_src", { client, yearMonth });
 }
 
 export async function getSrcOos(client: string) {

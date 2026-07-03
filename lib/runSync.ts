@@ -387,7 +387,19 @@ export async function runSyncForTenant(
     return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
   };
 
-  interface MonthAgg { value: number; units: number; pyValue: number; pyUnits: number }
+  // Per-month aggregate — mirrors MonthSales (full + live/partial figures).
+  interface MonthAgg {
+    value: number; // FULL calendar-month value (from PFM); 0 for the live month
+    units: number;
+    pyValue: number; // FULL same-month-LY (from PY FM); 0 until captured
+    pyUnits: number;
+    complete: boolean; // true for a settled month (value is the full month)
+    asOf: string; // MaxDate for the live/partial month
+    partialValue: number; // to-date value (MTD) — only meaningful while live
+    partialUnits: number;
+    partialPyValue: number; // to-date same-month-LY (PY MTD)
+    partialPyUnits: number;
+  }
   interface SalesAgg {
     ytdValue: number;
     ytdUnits: number;
@@ -397,8 +409,12 @@ export async function runSyncForTenant(
     mtdUnits: number;
     pyMtdValue: number;
     pyMtdUnits: number;
-    lmValue: number;
+    lmValue: number; // PMTD (previous month TO-DATE) — the LM comparator
     lmUnits: number;
+    pfmValue: number; // PFM (previous FULL month)
+    pfmUnits: number;
+    pyFmValue: number; // PY FM (anchor month, prior year, FULL)
+    pyFmUnits: number;
     maxDate: string; // latest MaxDate seen for this entity (YYYY-MM-DD)
     months: Record<string, MonthAgg>; // "YYYY-MM" → sales
   }
@@ -413,12 +429,28 @@ export async function runSyncForTenant(
     pyMtdUnits: 0,
     lmValue: 0,
     lmUnits: 0,
+    pfmValue: 0,
+    pfmUnits: 0,
+    pyFmValue: 0,
+    pyFmUnits: 0,
     maxDate: "",
     months: {},
   });
   const monthBucket = (a: SalesAgg, ym: string): MonthAgg => {
     let b = a.months[ym];
-    if (!b) a.months[ym] = b = { value: 0, units: 0, pyValue: 0, pyUnits: 0 };
+    if (!b)
+      a.months[ym] = b = {
+        value: 0,
+        units: 0,
+        pyValue: 0,
+        pyUnits: 0,
+        complete: false,
+        asOf: "",
+        partialValue: 0,
+        partialUnits: 0,
+        partialPyValue: 0,
+        partialPyUnits: 0,
+      };
     return b;
   };
   const addRow = (a: SalesAgg, r: (typeof salesRes.data)[number]) => {
@@ -432,25 +464,42 @@ export async function runSyncForTenant(
     a.pyMtdUnits += num(r["PY MTD Units"]);
     a.lmValue += num(r["PMTD Value"]);
     a.lmUnits += num(r["PMTD Units"]);
+    a.pfmValue += num(r["PFM Value"]);
+    a.pfmUnits += num(r["PFM Units"]);
+    a.pyFmValue += num(r["PY FM Value"]);
+    a.pyFmUnits += num(r["PY FM Units"]);
 
-    // Bucket into absolute months: MTD → the MaxDate month (with PY), PMTD → the
-    // month before it (no PY comparator exists). This lets a product that sells
-    // across channels with different freshness be split into the correct months.
+    // Bucket into absolute months. The SP's windows give us two months per row:
+    //   • the anchor month (MaxDate's month) — still IN PROGRESS, so we bank its
+    //     to-date figures (MTD, PY MTD) and its FULL prior-year total (PY FM),
+    //     but NOT a full value yet (that arrives next month as PFM).
+    //   • the previous month — SETTLED, whose FULL total is PFM (a whole calendar
+    //     month, not day-clamped). This is what fixes the "June = 1 day" bug.
+    // Banking a full previous month + a full prior-year, and never treating the
+    // live month's to-date as a full month, is what makes the history correct.
     const md = String(r.MaxDate ?? "").slice(0, 10);
     if (md) {
       if (md > a.maxDate) a.maxDate = md;
-      const mtdYm = ymOf(md);
-      if (mtdYm) {
-        const b = monthBucket(a, mtdYm);
-        b.value += num(r["MTD Value"]);
-        b.units += num(r["MTD Units"]);
-        b.pyValue += num(r["PY MTD Value"]);
-        b.pyUnits += num(r["PY MTD Units"]);
-        const pm = prevYm(mtdYm);
+      const anchorYm = ymOf(md);
+      if (anchorYm) {
+        const bA = monthBucket(a, anchorYm);
+        bA.pyValue += num(r["PY FM Value"]);
+        bA.pyUnits += num(r["PY FM Units"]);
+        bA.partialValue += num(r["MTD Value"]);
+        bA.partialUnits += num(r["MTD Units"]);
+        bA.partialPyValue += num(r["PY MTD Value"]);
+        bA.partialPyUnits += num(r["PY MTD Units"]);
+        if (md > bA.asOf) bA.asOf = md;
+        // (complete stays false — the anchor month has not settled.)
+
+        const pm = prevYm(anchorYm);
         if (pm) {
-          const c = monthBucket(a, pm);
-          c.value += num(r["PMTD Value"]);
-          c.units += num(r["PMTD Units"]);
+          const bP = monthBucket(a, pm);
+          bP.value += num(r["PFM Value"]);
+          bP.units += num(r["PFM Units"]);
+          bP.complete = true;
+          // Its full prior-year total isn't in this row — kept from history
+          // (banked as PY FM when this month was the anchor).
         }
       }
     }
@@ -509,6 +558,10 @@ export async function runSyncForTenant(
       pyMtdUnits: a.pyMtdUnits,
       lastMonthValue: a.lmValue,
       lastMonthUnits: a.lmUnits,
+      pfmValue: a.pfmValue,
+      pfmUnits: a.pfmUnits,
+      pyFmValue: a.pyFmValue,
+      pyFmUnits: a.pyFmUnits,
     };
   });
 
@@ -528,6 +581,10 @@ export async function runSyncForTenant(
       pyMtdUnits: a.pyMtdUnits,
       lastMonthValue: a.lmValue,
       lastMonthUnits: a.lmUnits,
+      pfmValue: a.pfmValue,
+      pfmUnits: a.pfmUnits,
+      pyFmValue: a.pyFmValue,
+      pyFmUnits: a.pyFmUnits,
     };
   });
 
@@ -547,6 +604,10 @@ export async function runSyncForTenant(
       pyMtdUnits: a.pyMtdUnits,
       lastMonthValue: a.lmValue,
       lastMonthUnits: a.lmUnits,
+      pfmValue: a.pfmValue,
+      pfmUnits: a.pfmUnits,
+      pyFmValue: a.pyFmValue,
+      pyFmUnits: a.pyFmUnits,
     };
   });
 
@@ -636,12 +697,14 @@ export async function runSyncForTenant(
   let salesHistoryWrite: ReturnType<typeof writeJson> | null = null;
 
   // ── Persist monthly sales history across syncs ──
-  // The SP only returns a prior-year figure (PY MTD) for the CURRENT month. Once
-  // a month rolls out of the SP window we can never re-fetch its same-month-last-
-  // year value — so we bank it while the month is live and keep it forever. Each
-  // month's `value` takes the freshest reading (a later PMTD pass gives the full
-  // settled month), while `pyValue` is preserved from whenever it was captured.
-  // Result: in August you still have June (value + June-last-year).
+  // Each sync gives us, per entity, a FULL previous month (PFM) and a FULL
+  // prior-year of the anchor month (PY FM). We bank these forever so the history
+  // grows: the previous month settles complete every sync, and a month's full
+  // prior-year (captured while it was the anchor) is kept for when it later
+  // settles. The live anchor month carries only to-date (partial) figures until
+  // the following month's PFM turns it into a settled full month.
+  //   Result: in August you still have June (full) + June-last-year, and July
+  //   settles to its full value with the correct full prior-year.
   if (wants("sales")) {
     const monthlyHistoryKey = `${slug}/data/sales/monthly-history.json`;
     const historyIn = await readJson<Record<string, Record<string, MonthSales>>>(
@@ -649,10 +712,9 @@ export async function runSyncForTenant(
       {}
     );
 
-    // Backfill from older period snapshots: their MTD == that period's month and
-    // they carry PY MTD, so we can recover months captured before this feature
-    // existed (e.g. PnP/SRC June, whose PY is gone from the current pull). Only
-    // fills gaps — never clobbers a value we already hold.
+    // Backfill from older period snapshots (best-effort). Pre-PFM snapshots only
+    // hold to-date MTD / PY MTD, so recovered months are marked NOT complete —
+    // a later PFM pass (which IS complete) always wins over them in the merge.
     for (let i = 1; i <= 6; i++) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const p = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -681,14 +743,42 @@ export async function runSyncForTenant(
       const existing = historyIn[key] || {};
       for (const [m, v] of Object.entries(existing)) merged[m] = { ...v };
       for (const [m, inc] of Object.entries(incoming)) {
-        const e = merged[m] || { value: 0, units: 0, pyValue: 0, pyUnits: 0 };
-        merged[m] = {
-          value: inc.value,
-          units: inc.units,
-          // Keep a previously-banked prior-year value if this pass didn't supply one.
-          pyValue: inc.pyValue > 0 ? inc.pyValue : e.pyValue,
-          pyUnits: inc.pyUnits > 0 ? inc.pyUnits : e.pyUnits,
-        };
+        const out: MonthSales = merged[m]
+          ? { ...merged[m] }
+          : { value: 0, units: 0, pyValue: 0, pyUnits: 0 };
+
+        // Full value: a SETTLED (complete) reading wins and can never be
+        // overwritten by a live/partial one — this is the fix for the old bug
+        // where a 1-day "MTD" clobbered a banked full month. PFM makes the
+        // previous month complete on every sync.
+        if (inc.complete) {
+          out.value = inc.value;
+          out.units = inc.units;
+          out.complete = true;
+        } else if (!out.complete) {
+          // Neither settled → this is the live edge month (full value unknown).
+          out.value = inc.value;
+          out.units = inc.units;
+          out.complete = false;
+        } // else: keep the existing settled value untouched.
+
+        // Full prior-year: prefer a fresh non-zero (PY FM), else keep what we banked.
+        if (inc.pyValue > 0) {
+          out.pyValue = inc.pyValue;
+          out.pyUnits = inc.pyUnits;
+        }
+
+        // Live/partial figures describe the current edge month — always take the
+        // freshest reading (ignored by the UI once the month is complete).
+        if (inc.partialValue || inc.partialPyValue || inc.asOf) {
+          out.partialValue = inc.partialValue;
+          out.partialUnits = inc.partialUnits;
+          out.partialPyValue = inc.partialPyValue;
+          out.partialPyUnits = inc.partialPyUnits;
+          out.asOf = inc.asOf || out.asOf;
+        }
+
+        merged[m] = out;
       }
       const capped: Record<string, MonthSales> = {};
       for (const m of Object.keys(merged).sort().reverse().slice(0, MAX_MONTHS)) capped[m] = merged[m];

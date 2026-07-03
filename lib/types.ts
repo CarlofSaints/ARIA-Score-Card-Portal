@@ -263,8 +263,12 @@ export interface SalesData {
   mtdUnits?: number; // this-month-to-date units
   pyMtdValue?: number; // prior-year same-month-to-date value (TMLY)
   pyMtdUnits?: number; // prior-year same-month-to-date units
-  lastMonthValue?: number; // previous calendar month value (LM) — pending SP support
-  lastMonthUnits?: number; // previous calendar month units — pending SP support
+  lastMonthValue?: number; // previous calendar month TO-DATE (PMTD) — LM comparator
+  lastMonthUnits?: number; // previous calendar month to-date units
+  pfmValue?: number; // Previous FULL Month value (whole prior calendar month)
+  pfmUnits?: number;
+  pyFmValue?: number; // Prior-Year FULL Month value (whole anchor month, last year)
+  pyFmUnits?: number;
   target?: number;
 }
 
@@ -392,14 +396,29 @@ export interface NdDetailRow {
   ndPercent: number; // rangedCount / totalCount * 100
 }
 
-// Sales for one calendar month, resolved from the SP's relative windows: the
-// channel's MaxDate-month comes from MTD (and carries a prior-year comparator),
-// the month before it comes from PMTD (no PY available).
+// Sales for one calendar month, resolved from the SP's windows.
+//
+// A *settled* month carries its FULL calendar-month total (`value`), sourced from
+// the SP's PFM field (Previous Full Month) captured in the following month's sync,
+// plus its FULL same-month-last-year total (`pyValue`) from the SP's PY FM field
+// captured while that month was the anchor. `complete = true` marks a settled
+// month.
+//
+// The current *in-progress* month has no full value yet — it carries to-date
+// figures instead (`partialValue` from MTD, `partialPyValue` from PY MTD, a fair
+// like-for-like partial comparator) and `complete = false`. This separation is
+// what stops a 1-day "MTD" reading from ever overwriting a banked full month.
 export interface MonthSales {
-  value: number;
+  value: number; // FULL calendar-month value (settled; from PFM). 0 until known.
   units: number;
-  pyValue: number; // prior-year same month (only known for the MTD month; else 0)
+  pyValue: number; // FULL same-month-last-year (from PY FM); 0 until captured.
   pyUnits: number;
+  complete?: boolean; // true once the full-month value is known (else it's live)
+  asOf?: string; // MaxDate (YYYY-MM-DD) for a live/partial month
+  partialValue?: number; // to-date value (from MTD) — only for the live month
+  partialUnits?: number;
+  partialPyValue?: number; // to-date same-month-LY (from PY MTD) — fair partial cmp
+  partialPyUnits?: number;
 }
 
 export interface SalesDetailRow {
