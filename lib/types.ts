@@ -414,6 +414,8 @@ export interface MonthSales {
   pyValue: number; // FULL same-month-last-year (from PY FM); 0 until captured.
   pyUnits: number;
   complete?: boolean; // true once the full-month value is known (else it's live)
+  pyComplete?: boolean; // true once the FULL prior-year is known (from an
+  // @YearMonth pull of that month — not a to-date estimate)
   asOf?: string; // MaxDate (YYYY-MM-DD) for a live/partial month
   partialValue?: number; // to-date value (from MTD) — only for the live month
   partialUnits?: number;

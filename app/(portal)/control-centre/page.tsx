@@ -44,13 +44,17 @@ interface SyncMeta {
   ndDetailCount?: number;
 }
 
-type SyncPart = "core" | "sales" | "oos" | "nd" | "phantom";
+type SyncPart = "core" | "sales" | "oos" | "nd" | "phantom" | "salesmonths";
 const SYNC_PARTS: { key: SyncPart; label: string }[] = [
   { key: "core", label: "Master data" },
   { key: "sales", label: "Sales" },
   { key: "oos", label: "Out of Stock" },
   { key: "nd", label: "Numerical Dist." },
   { key: "phantom", label: "Phantom" },
+  // Backfills full calendar-month value + full prior-year for completed months
+  // (via the SP's @YearMonth param). Heavy but one-time per month — off by
+  // default; tick + Sync Now to fill the Sales page's month history.
+  { key: "salesmonths", label: "Full months (LY) — backfill" },
 ];
 
 interface SyncLogEntry {
@@ -86,6 +90,7 @@ export default function ControlCentrePage() {
     oos: true,
     nd: true,
     phantom: true,
+    salesmonths: false,
   });
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
   const [showLog, setShowLog] = useState(false);
@@ -265,8 +270,13 @@ export default function ControlCentrePage() {
     setSyncMessage("");
     try {
       const done: SyncPart[] = [];
+      let monthsNote = "";
       for (const part of parts) {
-        setSyncMessage(`Syncing ${part}… (${done.length + 1}/${parts.length})`);
+        const isMonths = part === "salesmonths";
+        setSyncMessage(
+          `Syncing ${isMonths ? "full months (LY)" : part}… (${done.length + 1}/${parts.length})` +
+            (isMonths ? " — pulling completed months, ~1-2 min" : "")
+        );
         const res = await authFetch("/api/sync", {
           method: "POST",
           body: JSON.stringify({ parts: [part] }),
@@ -277,9 +287,15 @@ export default function ControlCentrePage() {
           await refreshSyncState();
           return;
         }
+        if (isMonths && data.months) {
+          const m = data.months as { processed: string[]; pending: string[] };
+          monthsNote =
+            ` · months banked: ${m.processed.length ? m.processed.join(", ") : "none (already up to date)"}` +
+            (m.pending.length ? ` · ${m.pending.length} older month(s) still pending — run again to continue` : "");
+        }
         done.push(part);
       }
-      setSyncMessage(`Synced: ${done.join(", ")}`);
+      setSyncMessage(`Synced: ${done.join(", ")}${monthsNote}`);
       await refreshSyncState();
     } catch {
       setSyncMessage("Network error during sync");
@@ -799,7 +815,9 @@ export default function ControlCentrePage() {
           </button>
           <button
             onClick={() => {
-              setSyncSel({ core: true, sales: true, oos: true, nd: true, phantom: true });
+              // "Sync All" covers the routine KPI parts; the heavy full-months
+              // backfill stays opt-in (tick it above + Sync Now).
+              setSyncSel({ core: true, sales: true, oos: true, nd: true, phantom: true, salesmonths: false });
               runSync(["core", "sales", "oos", "nd", "phantom"]);
             }}
             disabled={syncing}

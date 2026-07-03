@@ -29,6 +29,7 @@ import {
   getGamePhantom,
   getMakroPhantom,
 } from "@/lib/sqlProxy";
+import type { SqlSalesPnpRow } from "@/lib/sqlProxy";
 import type {
   ScorecardChannel,
   ScorecardStore,
@@ -1292,5 +1293,196 @@ export async function runSyncForTenant(
       ndDetail: !wants("nd") ? skipped : ndOk ? ndDetailRows.length : "(unchanged — SP failed)",
       phantomDetail: !wants("phantom") ? skipped : phantomOk ? phantomRows.length : "(unchanged — SP failed)",
     },
+  };
+}
+
+export interface MonthBackfillResult {
+  processed: string[]; // months banked this run (YYYY-MM)
+  skipped: string[]; // months already banked (skipped)
+  pending: string[]; // months still to do (hit the per-run cap / time budget)
+  errors: Record<string, string>; // "<ym>:<channel>" → message
+}
+
+/**
+ * Backfill correct FULL-MONTH sales (value AND prior-year) for COMPLETED months.
+ *
+ * The normal sync's latest-data pull can give a completed month's full value
+ * (via PFM), but NOT its full prior-year — a July-anchored row's prior-year
+ * field is July-last-year, never June-last-year. The only correct source for a
+ * past month's prior-year is an @YearMonth pull of that month: anchored at the
+ * month-end, the SP's MTD becomes the full month and PY MTD the full same-month-
+ * last-year (verified live: GAME 2026-06 → MTD R225,421, PY MTD R249,918).
+ *
+ * Completed months are immutable, so each is pulled ONCE and banked forever
+ * (tracked in month-backfill.json). Runs newest-first, capped per run + time-
+ * budgeted, banking incrementally so it's resumable. It is its OWN sync part —
+ * never folded into the normal sync — so these extra heavy pulls can't drag the
+ * routine sync back over the 300s timeout.
+ */
+export async function backfillSalesMonths(
+  slug: string,
+  options: { maxMonths?: number; force?: boolean } = {}
+): Promise<MonthBackfillResult> {
+  const config = await getTenantConfig(slug);
+  if (!config?.sqlClientName) {
+    throw new Error(
+      `No SQL client mapped for tenant "${slug}". Set it in Super Admin > Edit Client.`
+    );
+  }
+  const client = config.sqlClientName;
+
+  const num = (v: unknown): number => {
+    const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  // Master data + lookup maps (reused from the last core sync).
+  const [channels, stores, products] = await Promise.all([
+    readJson<ScorecardChannel[]>(`${slug}/data/channels.json`, []),
+    readJson<ScorecardStore[]>(`${slug}/data/stores.json`, []),
+    readJson<ScorecardProduct[]>(`${slug}/data/products.json`, []),
+  ]);
+  const channelIdByName = new Map<string, string>(
+    channels.map((c) => [c.name, c.id] as [string, string])
+  );
+  const storeBySiteCode = new Map<string, ScorecardStore>(
+    stores.filter((s) => s.siteCode).map((s) => [s.siteCode as string, s] as [string, ScorecardStore])
+  );
+  const productBySku = new Map<string, ScorecardProduct>(
+    products.map((p) => [p.sku, p] as [string, ScorecardProduct])
+  );
+
+  const now = new Date();
+  const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  // Candidate completed months: the trailing calendar months strictly before the
+  // current one, newest first (the recent months are what users look at).
+  const lookback = 13;
+  const candidates: string[] = [];
+  for (let i = 1; i <= lookback; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    candidates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+
+  const markerKey = `${slug}/data/sales/month-backfill.json`;
+  const doneMarker = await readJson<Record<string, { at: string; ok: boolean }>>(markerKey, {});
+  const force = !!options.force;
+  const maxMonths = Math.max(1, options.maxMonths ?? 2);
+
+  const toDo = candidates.filter((m) => force || !doneMarker[m]?.ok);
+  const skipped = candidates.filter((m) => !force && doneMarker[m]?.ok);
+
+  const monthlyHistoryKey = `${slug}/data/sales/monthly-history.json`;
+  const history = await readJson<Record<string, Record<string, MonthSales>>>(monthlyHistoryKey, {});
+
+  const processed: string[] = [];
+  const errors: Record<string, string> = {};
+  const start = Date.now();
+  const BUDGET_MS = 220_000; // stay well inside the route's 300s maxDuration
+
+  const pull = async (
+    fn: () => Promise<{ data: SqlSalesPnpRow[] }>,
+    label: string
+  ): Promise<SqlSalesPnpRow[]> => {
+    try {
+      return (await fn()).data;
+    } catch (e) {
+      errors[label] = e instanceof Error ? e.message : String(e);
+      return [];
+    }
+  };
+
+  for (const ym of toDo) {
+    if (processed.length >= maxMonths) break;
+    if (Date.now() - start > BUDGET_MS) break;
+
+    // Pull every channel for this month, anchored at its month-end. 5 of the 6
+    // SPs live on pool2 (max 5 conns) + SPAR on the primary pool → exactly fills
+    // pool2 without queueing.
+    const [pnp, spar, mass, game, makro, src] = await Promise.all([
+      pull(() => getSalesPnp(client, ym), `${ym}:pnp`),
+      pull(() => getSparSales(client, ym), `${ym}:spar`),
+      pull(() => getMassbuildSales(client, ym), `${ym}:massbuild`),
+      pull(() => getGameSales(client, ym), `${ym}:game`),
+      pull(() => getMakroSales(client, ym), `${ym}:makro`),
+      pull(() => getSrcSales(client, ym), `${ym}:src`),
+    ]);
+    const rows = [...pnp, ...spar, ...mass, ...game, ...makro, ...src];
+    // Nothing came back (all channels errored) — leave unmarked so a later run
+    // retries rather than banking an empty month.
+    if (!rows.length) continue;
+
+    // Aggregate the month per entity. Anchor is the month-end, so MTD = the full
+    // month and PY MTD = the full same-month-last-year.
+    interface Agg { value: number; units: number; pyValue: number; pyUnits: number }
+    const byChannel = new Map<string, Agg>();
+    const byStore = new Map<string, Agg>();
+    const byProduct = new Map<string, Agg>();
+    const add = (map: Map<string, Agg>, id: string, r: SqlSalesPnpRow) => {
+      let a = map.get(id);
+      if (!a) map.set(id, (a = { value: 0, units: 0, pyValue: 0, pyUnits: 0 }));
+      a.value += num(r["MTD Value"]);
+      a.units += num(r["MTD Units"]);
+      a.pyValue += num(r["PY MTD Value"]);
+      a.pyUnits += num(r["PY MTD Units"]);
+    };
+    for (const r of rows) {
+      const store = storeBySiteCode.get(r.SiteCode);
+      const product = productBySku.get(r["Product ID"]);
+      const channelId = store
+        ? channelIdByName.get(store.channelName)
+        : channelIdByName.get(r.Channel);
+      if (channelId) add(byChannel, channelId, r);
+      if (store) add(byStore, store.id, r);
+      if (product) add(byProduct, product.id, r);
+    }
+
+    // Bank as the authoritative settled month (full value + full prior-year).
+    const bank = (level: string, id: string, a: Agg) => {
+      const key = `${level}|${id}`;
+      const h = (history[key] ||= {});
+      h[ym] = {
+        value: a.value,
+        units: a.units,
+        pyValue: a.pyValue,
+        pyUnits: a.pyUnits,
+        complete: true,
+        pyComplete: true,
+      };
+    };
+    for (const [id, a] of byChannel) bank("channel", id, a);
+    for (const [id, a] of byStore) bank("store", id, a);
+    for (const [id, a] of byProduct) bank("product", id, a);
+
+    doneMarker[ym] = { at: now.toISOString(), ok: true };
+    processed.push(ym);
+    // Persist after each month so progress survives a timeout (next run resumes).
+    await Promise.all([
+      writeJson(monthlyHistoryKey, history),
+      writeJson(markerKey, doneMarker),
+    ]);
+  }
+
+  // Fold the freshly-banked months into the current period's detail rows so the
+  // Sales page (which reads detail.json) reflects them without a full sales sync.
+  if (processed.length) {
+    const detailKey = `${slug}/data/sales/${period}/detail.json`;
+    const detail = await readJson<SalesDetailRow[]>(detailKey, []);
+    if (detail.length) {
+      for (const r of detail) {
+        const h = history[`${r.level}|${r.entityId}`];
+        if (!h) continue;
+        r.months = { ...(r.months || {}) };
+        for (const m of processed) if (h[m]) r.months[m] = h[m];
+      }
+      await writeJson(detailKey, detail);
+    }
+  }
+
+  return {
+    processed,
+    skipped,
+    pending: toDo.filter((m) => !processed.includes(m)),
+    errors,
   };
 }
