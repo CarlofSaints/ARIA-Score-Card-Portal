@@ -45,6 +45,23 @@ export async function deleteBlob(key: string): Promise<void> {
   }
 }
 
+// List the immediate child folder names under a prefix (e.g. the "YYYY-MM"
+// period folders under "<slug>/data/kpi/"). Walks pagination so it doesn't miss
+// folders when a period holds many blobs.
+export async function listChildFolders(prefix: string): Promise<string[]> {
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const r = await list({ prefix, cursor, limit: 1000 });
+    for (const b of r.blobs) {
+      const seg = b.pathname.slice(prefix.length).split("/")[0];
+      if (seg) seen.add(seg);
+    }
+    cursor = r.hasMore ? r.cursor : undefined;
+  } while (cursor);
+  return [...seen];
+}
+
 export async function writeBlob(
   key: string,
   data: Buffer | string,

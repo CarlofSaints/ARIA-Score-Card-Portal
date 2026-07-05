@@ -11,6 +11,17 @@ interface ScoreTableProps {
   title: string;
 }
 
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return ym;
+  return new Date(y, m - 1, 1).toLocaleString("en-ZA", { month: "short", year: "numeric" });
+}
+
+function currentPeriod(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function scoreColor(score: number, max: number): string {
   if (max === 0) return "text-gray-400";
   const pct = score / max;
@@ -41,6 +52,12 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
   const [period, setPeriod] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // Available month snapshots + the one in view. Empty selection = not resolved
+  // yet; the scores fetch waits for it so we make a single request.
+  const [periods, setPeriods] = useState<string[]>([]);
+  const [selected, setSelected] = useState("");
+  const [curPeriod, setCurPeriod] = useState(currentPeriod());
+
   const [sortKey, setSortKey] = useState<SortKey>("total");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -57,16 +74,50 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     Object.fromEntries(cols.map((c) => [c.key, c.width]))
   );
 
+  // Load the available month snapshots once, then default to the current month.
   useEffect(() => {
-    authFetch(`/api/scores/${type}`)
+    let alive = true;
+    authFetch(`/api/scores/periods`)
+      .then((r) => r.json())
+      .then((data: { periods?: string[]; current?: string }) => {
+        if (!alive) return;
+        const list = data.periods?.length ? data.periods : [data.current || currentPeriod()];
+        setPeriods(list);
+        setCurPeriod(data.current || currentPeriod());
+        setSelected((s) => s || data.current || list[0]);
+      })
+      .catch(() => {
+        if (!alive) return;
+        const cur = currentPeriod();
+        setPeriods([cur]);
+        setSelected((s) => s || cur);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Fetch scores for the selected month. Runs once the period is resolved and
+  // again whenever the month (or scorecard type) changes.
+  useEffect(() => {
+    if (!selected) return;
+    setLoading(true);
+    let alive = true;
+    authFetch(`/api/scores/${type}?period=${selected}`)
       .then((r) => r.json())
       .then((data) => {
+        if (!alive) return;
         setScores(data.scores || []);
         setPeriod(data.period || "");
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [type]);
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [type, selected]);
 
   function valueFor(s: EntityScore, key: SortKey): number | string {
     if (key === "name") return s.entityName;
@@ -96,16 +147,41 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-2 border-[var(--color-primary)] border-t-transparent rounded-full" />
-      </div>
-    );
-  }
+  const isHistorical = !!selected && selected !== curPeriod;
 
   return (
     <div>
+      {/* Period selector — pick a month's end-of-month snapshot to compare
+          progression / regression against the current month. */}
+      <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          {isHistorical
+            ? `End-of-month snapshot for ${monthLabel(selected)} — compare against the current month.`
+            : "Current month (updates on each sync)."}
+        </p>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-[var(--color-text-muted)]">Month</label>
+          <select
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
+          >
+            {periods.map((p) => (
+              <option key={p} value={p}>
+                {monthLabel(p)}
+                {p === curPeriod ? " (current)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin w-8 h-8 border-2 border-[var(--color-primary)] border-t-transparent rounded-full" />
+        </div>
+      ) : (
+        <>
       {/* Summary Cards */}
       {scores.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -224,6 +300,8 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
