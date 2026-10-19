@@ -21,12 +21,12 @@ export async function GET(req: NextRequest) {
       searchParams.get("period") ||
       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    const rows = await readJson<SalesDetailRow[]>(
-      `${slug}/data/sales/${period}/detail.json`,
-      []
-    );
+    const [rows, combos] = await Promise.all([
+      readJson<SalesDetailRow[]>(`${slug}/data/sales/${period}/detail.json`, []),
+      readJson<SalesDetailRow[]>(`${slug}/data/sales/${period}/combos.json`, []),
+    ]);
 
-    return Response.json({ rows, period }, { headers: noCacheHeaders() });
+    return Response.json({ rows, combos, period }, { headers: noCacheHeaders() });
   } catch (err) {
     return handleAuthError(err);
   }

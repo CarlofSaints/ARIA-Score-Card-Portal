@@ -8,11 +8,23 @@ import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { SalesDetailRow, MonthSales } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
 
-// View is "ytd" or a specific calendar month key "YYYY-MM".
-type SortKey = "name" | "level" | "channelName" | "value" | "units" | "prev" | "growth";
+// Granularity. "detail" = store×SKU combos; the rest are the rolled-up aggregates.
 type Level = "detail" | "channel" | "store" | "product";
-// Detail view groups grains in this order.
-const LEVEL_ORDER: Record<string, number> = { channel: 0, store: 1, product: 2 };
+type ColKey = "channel" | "store" | "product" | "value" | "units" | "prev" | "growth";
+
+// Name columns shown per level (figures are always appended). Picking a level
+// both re-aggregates the rows and swaps which name columns appear.
+const NAME_COLS: Record<Level, ColKey[]> = {
+  channel: ["channel"],
+  store: ["channel", "store"],
+  product: ["product"],
+  detail: ["channel", "store", "product"],
+};
+const VALUE_COLS: ColKey[] = ["value", "units", "prev", "growth"];
+const COL_WIDTH: Record<ColKey, number> = {
+  channel: 160, store: 260, product: 280, value: 150, units: 120, prev: 150, growth: 110,
+};
+const RIGHT = new Set<ColKey>(["value", "units", "prev", "growth"]);
 
 function monthLabel(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
@@ -20,44 +32,28 @@ function monthLabel(ym: string): string {
   return new Date(y, m - 1, 1).toLocaleString("en-ZA", { month: "short", year: "numeric" });
 }
 
-const COLS: { key: SortKey; label: string; width: number; align?: "right" | "center"; sortable?: boolean }[] = [
-  { key: "name", label: "Entity", width: 300 },
-  { key: "channelName", label: "Channel", width: 120 },
-  { key: "value", label: "Value", width: 140, align: "right" },
-  { key: "units", label: "Units", width: 110, align: "right" },
-  { key: "prev", label: "Prev", width: 140, align: "right" },
-  { key: "growth", label: "Growth", width: 100, align: "right" },
-];
-
 function rand(v: number): string {
   return "R " + (v || 0).toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-
-function entityName(r: SalesDetailRow): string {
-  if (r.level === "product") return r.productName || r.productId;
-  if (r.level === "store") return r.storeName || r.siteCode;
-  return r.channelName;
 }
 
 export default function SalesPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  const [rows, setRows] = useState<SalesDetailRow[]>([]);
+  const [rows, setRows] = useState<SalesDetailRow[]>([]); // channel/store/product aggregates
+  const [combos, setCombos] = useState<SalesDetailRow[]>([]); // store×SKU (Detail)
   const [period, setPeriod] = useState("");
   const [fetching, setFetching] = useState(true);
 
   const [view, setView] = useState<string>("ytd"); // "ytd" | "YYYY-MM"
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("all");
-  const [level, setLevel] = useState<Level>("detail");
+  const [level, setLevel] = useState<Level>("store");
   const { kams, kamId, setKamId, matches } = useKamFilter();
-  const [sortKey, setSortKey] = useState<SortKey>("value");
+  const [sortKey, setSortKey] = useState<ColKey>("value");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  const { widths, startResize, totalWidth } = useColumnWidths(
-    Object.fromEntries(COLS.map((c) => [c.key, c.width]))
-  );
+  const { widths, startResize, totalWidth } = useColumnWidths(COL_WIDTH);
 
   useEffect(() => {
     if (!loading && !user) router.push("/login");
@@ -69,6 +65,7 @@ export default function SalesPage() {
       .then((r) => r.json())
       .then((d) => {
         setRows(Array.isArray(d.rows) ? d.rows : []);
+        setCombos(Array.isArray(d.combos) ? d.combos : []);
         setPeriod(d.period || "");
       })
       .catch(() => {})
@@ -78,16 +75,14 @@ export default function SalesPage() {
   const isYtd = view === "ytd";
   const mrow = (r: SalesDetailRow) => r.months?.[view];
 
-  // A month is "live" (still in progress) when it's explicitly not complete —
-  // then we read its to-date (partial) figures, which compare like-for-like
-  // against the prior year to-date. A SETTLED month reads its FULL calendar-month
-  // value (from the SP's PFM field) and its FULL prior-year (PY FM).
+  // A month is "live" (still in progress) when explicitly not complete — then we
+  // read its to-date figures (compare like-for-like vs prior-year to-date). A
+  // SETTLED month reads its FULL calendar-month value (PFM) and FULL prior-year.
   const mLive = (m?: MonthSales) => !!m && m.complete === false;
   const mVal = (m?: MonthSales) => (m ? (mLive(m) ? m.partialValue ?? 0 : m.value) : 0);
   const mUnits = (m?: MonthSales) => (m ? (mLive(m) ? m.partialUnits ?? 0 : m.units) : 0);
   const mPrev = (m?: MonthSales) => (m ? (mLive(m) ? m.partialPyValue ?? 0 : m.pyValue) : 0);
 
-  // Row accessors switch between YTD and a specific calendar month.
   const val = (r: SalesDetailRow) => (isYtd ? r.ytdValue : mVal(mrow(r)));
   const units = (r: SalesDetailRow) => (isYtd ? r.ytdUnits : mUnits(mrow(r)));
   const prev = (r: SalesDetailRow) => (isYtd ? r.splyValue : mPrev(mrow(r)));
@@ -99,56 +94,53 @@ export default function SalesPage() {
     return p > 0 ? Math.round(((v - p) / p) * 1000) / 10 : null;
   };
 
-  // All grains are available; the Level toggle chooses which to show.
-  const baseRows = rows;
-
-  // Calendar months available in the data (newest first).
-  const months = useMemo(
-    () =>
-      Array.from(new Set(baseRows.flatMap((r) => Object.keys(r.months || {}))))
-        .sort()
-        .reverse(),
-    [baseRows]
+  // Detail reads the store×SKU combos; every other level reads its aggregate rows.
+  const baseRows = useMemo(
+    () => (level === "detail" ? combos : rows.filter((r) => r.level === level)),
+    [level, rows, combos]
   );
 
-  // The live (in-progress) month = the newest month still marked not-complete
-  // for some entity. Its figures are to-date, not a full calendar month.
+  // Period dropdown + live-month come from the aggregates (they carry full month
+  // history, including back-filled months); Detail only has the current period.
+  const months = useMemo(
+    () => Array.from(new Set(rows.flatMap((r) => Object.keys(r.months || {})))).sort().reverse(),
+    [rows]
+  );
   const liveMonth = useMemo(
-    () => months.find((m) => baseRows.some((r) => r.months?.[m]?.complete === false)) || "",
-    [months, baseRows]
+    () => months.find((m) => rows.some((r) => r.months?.[m]?.complete === false)) || "",
+    [months, rows]
   );
   const selectedLive = !isYtd && view === liveMonth;
 
   const channels = useMemo(
-    () => Array.from(new Set(baseRows.map((r) => r.channelName).filter(Boolean))).sort(),
-    [baseRows]
+    () => Array.from(new Set(rows.map((r) => r.channelName).filter(Boolean))).sort(),
+    [rows]
   );
+
+  const rowText = (r: SalesDetailRow) =>
+    [r.channelName, r.storeName, r.productName, r.productId, r.siteCode].filter(Boolean).join(" ");
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return baseRows.filter((r) => {
-      if (level !== "detail" && r.level !== level) return false;
-      if (channel !== "all" && r.channelName !== channel) return false;
-      // KAM owns channels (+ brands at SKU grain); brand only checked on products.
-      if (!matches(r.channelName, r.level === "product" ? r.brand : undefined)) return false;
-      if (q && !entityName(r).toLowerCase().includes(q)) return false;
-      // When a specific month is selected, only show rows that have data for it.
+      // Channel filter — skipped for rows with no channel (product aggregates).
+      if (channel !== "all" && r.channelName && r.channelName !== channel) return false;
+      // KAM ownership: channel for channel/store/detail; brand where the row is a SKU.
+      const chForKam = level === "product" ? undefined : r.channelName || undefined;
+      const brForKam = level === "product" || level === "detail" ? r.brand : undefined;
+      if (!matches(chForKam, brForKam)) return false;
+      if (q && !rowText(r).toLowerCase().includes(q)) return false;
       if (view !== "ytd" && !r.months?.[view]) return false;
       return true;
     });
   }, [baseRows, search, channel, level, matches, view]);
 
-  // Data-as-of dates in view. When a month is selected across channels with
-  // different freshness, the same month is MTD for some and PMTD for others —
-  // warn so the number isn't misread.
   const maxDates = useMemo(
     () => Array.from(new Set(filtered.map((r) => r.maxDate).filter(Boolean))).sort() as string[],
     [filtered]
   );
-  // Only a genuine problem when the selected month is a FULL month for some
-  // entities but still LIVE (to-date) for others — then the total mixes a whole
-  // calendar month with a partial slice. Differing MaxDates on settled months are
-  // harmless (every entity reports its full month), so don't warn on those.
+  // Warn only when the selected month is FULL for some rows but still LIVE for
+  // others — then the total mixes a whole month with a partial slice.
   const showMismatch = useMemo(() => {
     if (isYtd) return false;
     let hasComplete = false;
@@ -162,56 +154,45 @@ export default function SalesPage() {
     return hasComplete && hasLive;
   }, [filtered, view, isYtd]);
 
+  const sortVal = (r: SalesDetailRow, key: ColKey): number | string => {
+    switch (key) {
+      case "channel": return r.channelName;
+      case "store": return r.storeName || r.siteCode;
+      case "product": return r.productName || r.productId;
+      case "value": return val(r);
+      case "units": return units(r);
+      case "prev": return prev(r);
+      case "growth": return grow(r) ?? -Infinity;
+    }
+    return "";
+  };
+
   const sorted = useMemo(() => {
     const arr = [...filtered];
     const dir = sortDir === "asc" ? 1 : -1;
-    const accessor: Record<SortKey, (r: SalesDetailRow) => number | string> = {
-      name: entityName,
-      level: (r) => r.level,
-      channelName: (r) => r.channelName,
-      value: val,
-      units: units,
-      prev: prev,
-      growth: (r) => grow(r) ?? -Infinity,
-    };
-    const get = accessor[sortKey];
     arr.sort((a, b) => {
-      // Detail view groups by grain first: Channel, then Store, then Product.
-      if (level === "detail") {
-        const lv = (LEVEL_ORDER[a.level] ?? 9) - (LEVEL_ORDER[b.level] ?? 9);
-        if (lv !== 0) return lv;
-      }
-      const av = get(a);
-      const bv = get(b);
+      const av = sortVal(a, sortKey);
+      const bv = sortVal(b, sortKey);
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
     });
     return arr;
-  }, [filtered, sortKey, sortDir, level, view]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, sortKey, sortDir, view]);
 
+  // Each level is a single grain, so the headline is just its sum — no double-count.
   const totals = useMemo(() => {
-    // Summing across grains (channel+store+product) would multiply-count the same
-    // sales, so the headline always totals ONE grain: the selected one, or (under
-    // "All") the finest grain present.
-    const grain: Exclude<Level, "detail"> =
-      level !== "detail"
-        ? level
-        : baseRows.some((r) => r.level === "store")
-          ? "store"
-          : baseRows.some((r) => r.level === "product")
-            ? "product"
-            : "channel";
-    const totalRows = filtered.filter((r) => r.level === grain);
-    const cur = totalRows.reduce((a, r) => a + (val(r) || 0), 0);
-    const pv = totalRows.reduce((a, r) => a + (prev(r) || 0), 0);
+    const cur = filtered.reduce((a, r) => a + (val(r) || 0), 0);
+    const pv = filtered.reduce((a, r) => a + (prev(r) || 0), 0);
     const growth = pv > 0 ? Math.round(((cur - pv) / pv) * 1000) / 10 : 0;
     return { cur, pv, growth };
-  }, [filtered, baseRows, level, view]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, view]);
 
   function toggleSort(key: string) {
-    const k = key as SortKey;
+    const k = key as ColKey;
     if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(k); setSortDir(k === "name" || k === "channelName" || k === "level" ? "asc" : "desc"); }
+    else { setSortKey(k); setSortDir(k === "channel" || k === "store" || k === "product" ? "asc" : "desc"); }
   }
 
   const liveSuffix = selectedLive ? " (to date)" : "";
@@ -221,10 +202,43 @@ export default function SalesPage() {
   // Prior-year label = the viewed month one year earlier (PY Aug 2026 → PY Aug 2025).
   const pyMonthLabel = monthLabel(view.replace(/^\d{4}/, (y) => String(Number(y) - 1)));
   const prevLabel = isYtd ? "SPLY Value" : `PY ${pyMonthLabel}${liveSuffix}`;
-  const colLabel = (key: SortKey, fallback: string) =>
-    key === "value" ? valLabel : key === "units" ? unitsLabel : key === "prev" ? prevLabel : fallback;
+
+  const cols = useMemo<ColKey[]>(() => [...NAME_COLS[level], ...VALUE_COLS], [level]);
+  const primaryNameCol = NAME_COLS[level][NAME_COLS[level].length - 1];
+
+  const colLabel = (c: ColKey): string => {
+    switch (c) {
+      case "channel": return "Channel";
+      case "store": return "Store";
+      case "product": return "Product";
+      case "value": return valLabel;
+      case "units": return unitsLabel;
+      case "prev": return prevLabel;
+      case "growth": return "Growth";
+    }
+    return c;
+  };
+  const cellText = (c: ColKey, r: SalesDetailRow): string => {
+    switch (c) {
+      case "channel": return r.channelName || "—";
+      case "store": return r.storeName || r.siteCode || "—";
+      case "product": return r.productName || r.productId || "—";
+      case "value": return rand(val(r));
+      case "units": return (units(r) || 0).toLocaleString("en-ZA");
+      case "prev": return rand(prev(r));
+      case "growth": return grow(r) != null ? `${grow(r)}%` : "—";
+    }
+    return "";
+  };
+  const cellClass = (c: ColKey, r: SalesDetailRow): string => {
+    if (c === "growth") return `px-3 py-2 text-right font-medium ${(grow(r) ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`;
+    if (RIGHT.has(c)) return "px-3 py-2 text-right text-[var(--color-text)]";
+    return `px-3 py-2 text-[var(--color-text)] truncate${c === primaryNameCol ? " font-medium" : ""}`;
+  };
 
   if (loading || !user) return null;
+
+  const detailNoData = level === "detail" && combos.length === 0 && rows.length > 0;
 
   return (
     <PermissionGate permission="view_sales">
@@ -275,16 +289,16 @@ export default function SalesPage() {
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search store / product…"
+          placeholder="Search channel / store / product…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
         <select value={level} onChange={(e) => setLevel(e.target.value as Level)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
-          <option value="detail">Detail</option>
           <option value="channel">Channel</option>
           <option value="store">Store</option>
           <option value="product">Product</option>
+          <option value="detail">Detail (store × SKU)</option>
         </select>
         <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All KAMs</option>
@@ -304,34 +318,33 @@ export default function SalesPage() {
             No sales detail for {period || "this period"} yet. Run a sync in Control Centre &rarr; Data Sync.
           </p>
         </div>
+      ) : detailNoData ? (
+        <div className="text-center py-12 bg-white rounded-xl border border-[var(--color-border)]">
+          <p className="text-[var(--color-text-muted)]">
+            No store×SKU detail yet — run a fresh Sales sync in Control Centre to populate it.
+          </p>
+        </div>
       ) : (
         <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
           <div className="overflow-x-auto max-h-[70vh]">
-            <table className="text-sm" style={{ tableLayout: "fixed", width: totalWidth(COLS.map((c) => c.key)), minWidth: "100%" }}>
+            <table className="text-sm" style={{ tableLayout: "fixed", width: totalWidth(cols), minWidth: "100%" }}>
               <colgroup>
-                {COLS.map((c) => <col key={c.key} style={{ width: widths[c.key] }} />)}
+                {cols.map((c) => <col key={c} style={{ width: widths[c] }} />)}
               </colgroup>
               <thead className="sticky top-0 bg-[var(--color-bg)] z-10">
                 <tr className="text-left text-[var(--color-text-muted)]">
-                  {COLS.map((c) => (
-                    <Th key={c.key} label={colLabel(c.key, c.label)} colKey={c.key} align={c.align}
-                      sortKey={sortKey} sortDir={sortDir}
-                      onSort={c.sortable === false ? undefined : toggleSort}
-                      onResize={startResize(c.key)} />
+                  {cols.map((c) => (
+                    <Th key={c} label={colLabel(c)} colKey={c} align={RIGHT.has(c) ? "right" : undefined}
+                      sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} onResize={startResize(c)} />
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((r, i) => (
-                  <tr key={`${r.level}|${entityName(r)}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
-                    <td className="px-3 py-2 font-medium text-[var(--color-text)] truncate">{entityName(r)}</td>
-                    <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.channelName || "—"}</td>
-                    <td className="px-3 py-2 text-right text-[var(--color-text)]">{rand(val(r))}</td>
-                    <td className="px-3 py-2 text-right text-[var(--color-text)]">{(units(r) || 0).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right text-[var(--color-text)]">{rand(prev(r))}</td>
-                    <td className={`px-3 py-2 text-right font-medium ${(grow(r) ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {grow(r) != null ? `${grow(r)}%` : "—"}
-                    </td>
+                  <tr key={`${r.entityId}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
+                    {cols.map((c) => (
+                      <td key={c} className={cellClass(c, r)}>{cellText(c, r)}</td>
+                    ))}
                   </tr>
                 ))}
               </tbody>

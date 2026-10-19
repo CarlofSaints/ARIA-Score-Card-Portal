@@ -424,7 +424,7 @@ export interface MonthSales {
 }
 
 export interface SalesDetailRow {
-  level: "channel" | "store" | "product";
+  level: "channel" | "store" | "product" | "detail"; // "detail" = a store×SKU combo
   entityId: string;
   channelName: string;
   subChannel: string; // store-level sub-channel; "" for channel/product level

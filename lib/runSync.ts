@@ -509,6 +509,8 @@ export async function runSyncForTenant(
   const salesByChannelId = new Map<string, SalesAgg>();
   const salesByStoreId = new Map<string, SalesAgg>();
   const salesByProductId = new Map<string, SalesAgg>();
+  // store×SKU combos — the finest grain, for the Sales page's "Detail" view.
+  const salesByCombo = new Map<string, { agg: SalesAgg; store: ScorecardStore; product: ScorecardProduct }>();
   // Resolve product display name/brand from the SP rows for product detail rows.
   const salesBrandByProduct: Record<string, string> = {};
   const salesNameByProduct: Record<string, string> = {};
@@ -537,6 +539,13 @@ export async function runSyncForTenant(
       const spBrand = String(r["Product Brand"] ?? r.Brand ?? "");
       if (spBrand) salesBrandByProduct[product.id] = spBrand;
       if (r["Product Description"]) salesNameByProduct[product.id] = r["Product Description"];
+    }
+    // store×SKU combo (finest grain) — only when the row resolves to both.
+    if (store && product) {
+      const key = `${store.id}|${product.id}`;
+      let c = salesByCombo.get(key);
+      if (!c) salesByCombo.set(key, (c = { agg: emptyAgg(), store, product }));
+      addRow(c.agg, r);
     }
   }
 
@@ -675,6 +684,35 @@ export async function runSyncForTenant(
       subChannel: "",
       siteCode: "",
       storeName: "",
+      productId: p.sku,
+      productName: salesNameByProduct[p.id] || p.name,
+      brand: salesBrandByProduct[p.id] || p.brand || "",
+      ytdValue: a.ytdValue,
+      ytdUnits: a.ytdUnits,
+      splyValue: a.splyValue,
+      splyUnits: a.splyUnits,
+      growthPercent: growth(a.ytdValue, a.splyValue),
+      mtdValue: a.mtdValue,
+      mtdUnits: a.mtdUnits,
+      pyMtdValue: a.pyMtdValue,
+      pyMtdUnits: a.pyMtdUnits,
+      mtdGrowthPercent: growth(a.mtdValue, a.pyMtdValue),
+      maxDate: a.maxDate,
+      months: a.months,
+    });
+  }
+
+  // Flatten store×SKU combos into Detail rows (same shape as the aggregate detail
+  // rows but level "detail"; carries the live sync's month buckets too).
+  const salesComboRows: SalesDetailRow[] = [];
+  for (const { agg: a, store: st, product: p } of salesByCombo.values()) {
+    salesComboRows.push({
+      level: "detail",
+      entityId: `${st.id}|${p.id}`,
+      channelName: st.channelName,
+      subChannel: st.subChannel || "",
+      siteCode: st.siteCode || st.id,
+      storeName: st.name,
       productId: p.sku,
       productName: salesNameByProduct[p.id] || p.name,
       brand: salesBrandByProduct[p.id] || p.brand || "",
@@ -1142,7 +1180,8 @@ export async function runSyncForTenant(
       writeJson(`${slug}/data/sales/${period}/channels.json`, salesChannels),
       writeJson(`${slug}/data/sales/${period}/stores.json`, salesStores),
       writeJson(`${slug}/data/sales/${period}/products.json`, salesProducts),
-      writeJson(`${slug}/data/sales/${period}/detail.json`, salesDetailRows)
+      writeJson(`${slug}/data/sales/${period}/detail.json`, salesDetailRows),
+      writeJson(`${slug}/data/sales/${period}/combos.json`, salesComboRows)
     );
     if (salesHistoryWrite) writes.push(salesHistoryWrite);
   }
