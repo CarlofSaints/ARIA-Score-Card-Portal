@@ -23,7 +23,22 @@ export async function POST(req: NextRequest) {
     await requirePermission(req, "manage_cam_mapping");
     const slug = await getTenantSlug();
     const body = await req.json();
-    const mapping = await saveCamMapping(slug, body);
+    // Allow-list fields — never pass the raw body (saveCamMapping spreads it after
+    // assigning id, so a raw body could inject an arbitrary id or junk fields).
+    const { camUserId, camName, camEmail, channelIds, brandIds } = body ?? {};
+    if (!camUserId || !camName) {
+      return Response.json(
+        { error: "camUserId and camName are required" },
+        { status: 400, headers: noCacheHeaders() }
+      );
+    }
+    const mapping = await saveCamMapping(slug, {
+      camUserId,
+      camName,
+      camEmail,
+      channelIds: Array.isArray(channelIds) ? channelIds : [],
+      brandIds: Array.isArray(brandIds) ? brandIds : [],
+    });
     return Response.json({ mapping }, { status: 201, headers: noCacheHeaders() });
   } catch (err) {
     return handleAuthError(err);

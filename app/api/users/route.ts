@@ -13,6 +13,11 @@ import {
   deleteUser,
   setUserPassword,
 } from "@/lib/userData";
+import type { User, UserRole } from "@/lib/types";
+
+// Roles a tenant user-manager may assign. "super_admin" is a PLATFORM role and
+// must never be settable through this tenant endpoint (privilege escalation).
+const TENANT_ROLES: UserRole[] = ["admin", "cam", "manager", "rep"];
 
 export async function GET(req: NextRequest) {
   try {
@@ -41,6 +46,12 @@ export async function POST(req: NextRequest) {
         { status: 400, headers: noCacheHeaders() }
       );
     }
+    if (!TENANT_ROLES.includes(role)) {
+      return Response.json(
+        { error: "Invalid role" },
+        { status: 400, headers: noCacheHeaders() }
+      );
+    }
 
     const user = await createUser(slug, {
       name,
@@ -62,10 +73,25 @@ export async function PUT(req: NextRequest) {
     await requirePermission(req, "manage_users");
     const slug = await getTenantSlug();
     const body = await req.json();
-    const { id, password, ...updates } = body;
+    const { id, password, name, email, role, active, forcePasswordChange } = body;
 
     if (!id) {
       return Response.json({ error: "id is required" }, { status: 400, headers: noCacheHeaders() });
+    }
+
+    // Allow-list the editable profile fields — NEVER spread the raw body, or a
+    // caller could set role:"super_admin" (platform escalation) or other fields
+    // like id/tenantSlug/password straight into the user record.
+    const updates: Partial<Pick<User, "name" | "email" | "role" | "active" | "forcePasswordChange">> = {};
+    if (typeof name === "string") updates.name = name;
+    if (typeof email === "string") updates.email = email;
+    if (typeof active === "boolean") updates.active = active;
+    if (typeof forcePasswordChange === "boolean") updates.forcePasswordChange = forcePasswordChange;
+    if (role !== undefined) {
+      if (!TENANT_ROLES.includes(role)) {
+        return Response.json({ error: "Invalid role" }, { status: 400, headers: noCacheHeaders() });
+      }
+      updates.role = role;
     }
 
     // A password change is handled separately so it gets hashed (updateUser

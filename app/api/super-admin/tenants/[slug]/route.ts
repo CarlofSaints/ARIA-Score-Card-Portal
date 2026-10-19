@@ -40,7 +40,10 @@ export async function PUT(
 
     const { slug } = await params;
     const body = await req.json();
-    const tenant = await updateTenant(slug, body);
+    // Strip identity/immutable fields so a raw body can't repoint the record's
+    // key or forge its creation date (updateTenant spreads updates as-is).
+    const { slug: _s, id: _i, createdAt: _c, ...updates } = body ?? {};
+    const tenant = await updateTenant(slug, updates);
     return Response.json({ tenant }, { headers: noCacheHeaders() });
   } catch (err) {
     return handleAuthError(err);
