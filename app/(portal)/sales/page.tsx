@@ -6,9 +6,11 @@ import { useAuth, authFetch } from "@/lib/useAuth";
 import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { SalesDetailRow, MonthSales } from "@/lib/types";
+import { useKamFilter } from "@/lib/useKamFilter";
 
 // View is "ytd" or a specific calendar month key "YYYY-MM".
 type SortKey = "name" | "level" | "channelName" | "value" | "units" | "prev" | "growth";
+type Level = "all" | "channel" | "store" | "product";
 
 function monthLabel(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
@@ -47,6 +49,8 @@ export default function SalesPage() {
   const [view, setView] = useState<string>("ytd"); // "ytd" | "YYYY-MM"
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("all");
+  const [level, setLevel] = useState<Level>("all");
+  const { kams, kamId, setKamId, matches } = useKamFilter();
   const [sortKey, setSortKey] = useState<SortKey>("value");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -94,8 +98,8 @@ export default function SalesPage() {
     return p > 0 ? Math.round(((v - p) / p) * 1000) / 10 : null;
   };
 
-  // Channel-level rows are no longer shown — only store and product.
-  const baseRows = useMemo(() => rows.filter((r) => r.level !== "channel"), [rows]);
+  // All grains are available; the Level toggle chooses which to show.
+  const baseRows = rows;
 
   // Calendar months available in the data (newest first).
   const months = useMemo(
@@ -122,13 +126,16 @@ export default function SalesPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return baseRows.filter((r) => {
+      if (level !== "all" && r.level !== level) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
+      // KAM owns channels (+ brands at SKU grain); brand only checked on products.
+      if (!matches(r.channelName, r.level === "product" ? r.brand : undefined)) return false;
       if (q && !entityName(r).toLowerCase().includes(q)) return false;
       // When a specific month is selected, only show rows that have data for it.
       if (view !== "ytd" && !r.months?.[view]) return false;
       return true;
     });
-  }, [baseRows, search, channel, view]);
+  }, [baseRows, search, channel, level, matches, view]);
 
   // Data-as-of dates in view. When a month is selected across channels with
   // different freshness, the same month is MTD for some and PMTD for others —
@@ -177,11 +184,23 @@ export default function SalesPage() {
   }, [filtered, sortKey, sortDir, view]);
 
   const totals = useMemo(() => {
-    const cur = filtered.reduce((a, r) => a + (val(r) || 0), 0);
-    const pv = filtered.reduce((a, r) => a + (prev(r) || 0), 0);
+    // Summing across grains (channel+store+product) would multiply-count the same
+    // sales, so the headline always totals ONE grain: the selected one, or (under
+    // "All") the finest grain present.
+    const grain: Exclude<Level, "all"> =
+      level !== "all"
+        ? level
+        : baseRows.some((r) => r.level === "store")
+          ? "store"
+          : baseRows.some((r) => r.level === "product")
+            ? "product"
+            : "channel";
+    const totalRows = filtered.filter((r) => r.level === grain);
+    const cur = totalRows.reduce((a, r) => a + (val(r) || 0), 0);
+    const pv = totalRows.reduce((a, r) => a + (prev(r) || 0), 0);
     const growth = pv > 0 ? Math.round(((cur - pv) / pv) * 1000) / 10 : 0;
     return { cur, pv, growth };
-  }, [filtered, view]);
+  }, [filtered, baseRows, level, view]);
 
   function toggleSort(key: string) {
     const k = key as SortKey;
@@ -193,7 +212,9 @@ export default function SalesPage() {
   const viewLabel = isYtd ? "YTD" : monthLabel(view);
   const valLabel = `${viewLabel} Value${liveSuffix}`;
   const unitsLabel = `${viewLabel} Units${liveSuffix}`;
-  const prevLabel = isYtd ? "SPLY Value" : `PY ${viewLabel}${liveSuffix}`;
+  // Prior-year label = the viewed month one year earlier (PY Aug 2026 → PY Aug 2025).
+  const pyMonthLabel = monthLabel(view.replace(/^\d{4}/, (y) => String(Number(y) - 1)));
+  const prevLabel = isYtd ? "SPLY Value" : `PY ${pyMonthLabel}${liveSuffix}`;
   const colLabel = (key: SortKey, fallback: string) =>
     key === "value" ? valLabel : key === "units" ? unitsLabel : key === "prev" ? prevLabel : fallback;
 
@@ -253,6 +274,16 @@ export default function SalesPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
+        <select value={level} onChange={(e) => setLevel(e.target.value as Level)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+          <option value="all">All levels</option>
+          <option value="channel">Channel</option>
+          <option value="store">Store</option>
+          <option value="product">Product</option>
+        </select>
+        <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+          <option value="all">All KAMs</option>
+          {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+        </select>
         <select value={channel} onChange={(e) => setChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All channels</option>
           {channels.map((c) => <option key={c} value={c}>{c}</option>)}
