@@ -47,7 +47,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Sales", route: "/sales", icon: SalesIcon, permission: "view_sales" },
   { label: "Ranging", route: "/ranging", icon: RangingIcon, adminOnly: true },
   { label: "Control Centre", route: "/control-centre", icon: SettingsIcon, adminOnly: true },
-  { label: "CAM Mapping", route: "/cam-mapping", icon: MappingIcon, adminOnly: true },
+  { label: "KAM Mapping", route: "/cam-mapping", icon: MappingIcon, adminOnly: true },
   { label: "Admin", route: "/admin", icon: AdminIcon, adminOnly: true },
   { label: "SQL Reference", route: "/sql-reference", icon: DatabaseIcon, superAdminOnly: true },
 ];

@@ -324,7 +324,7 @@ export default function RangingPage() {
                     {e.rowsScanned.toLocaleString()}
                   </td>
                   <td className="px-4 py-2 text-[var(--color-text-muted)]">
-                    {new Date(e.uploadedAt).toLocaleString()}
+                    {new Date(e.uploadedAt).toLocaleString("en-ZA")}
                   </td>
                   {canManage && (
                     <td className="px-4 py-2 text-right">

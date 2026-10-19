@@ -22,13 +22,13 @@ export default function CamScorecardPage() {
       <ModuleGate moduleKey="cam_scorecard">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-[var(--color-dark)]">
-            CAM Score Card
+            KAM Score Card
           </h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
-            Performance scores for CAMs across assigned channels and brands
+            Performance scores for KAMs across assigned channels and brands
           </p>
         </div>
-        <ScoreTable type="cam" title="CAM" />
+        <ScoreTable type="cam" title="KAM" />
       </ModuleGate>
     </PermissionGate>
   );

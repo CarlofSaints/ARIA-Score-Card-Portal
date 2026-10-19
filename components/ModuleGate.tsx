@@ -35,7 +35,7 @@ export default function ModuleGate({ moduleKey, children }: ModuleGateProps) {
         </h2>
         <p className="text-[var(--color-text-muted)] max-w-md">
           This module has not been enabled for your account. If you would like
-          to add it, please speak to your CAM.
+          to add it, please speak to your KAM.
         </p>
       </div>
     );
