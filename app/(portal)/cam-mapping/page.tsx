@@ -24,7 +24,7 @@ export default function CamMappingPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Available options from SQL data + CAM users from the user list
+  // Available options from SQL data + KAM users from the user list
   const [availableChannels, setAvailableChannels] = useState<ScorecardChannel[]>([]);
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availableCams, setAvailableCams] = useState<CamUser[]>([]);
@@ -86,7 +86,7 @@ export default function CamMappingPage() {
 
     const cam = availableCams.find((c) => c.id === selectedCamId);
     if (!cam) {
-      setError("Select a CAM");
+      setError("Select a KAM");
       return;
     }
     setSaving(true);
@@ -134,10 +134,10 @@ export default function CamMappingPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-[var(--color-dark)]">
-            CAM Mapping
+            KAM Mapping
           </h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
-            Assign channels and brands to CAMs
+            Assign channels and brands to KAMs
           </p>
         </div>
         <button
@@ -165,7 +165,7 @@ export default function CamMappingPage() {
             </div>
           )}
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1.5">CAM *</label>
+            <label className="block text-sm font-medium mb-1.5">KAM *</label>
             {availableCams.length > 0 ? (
               <select
                 value={selectedCamId}
@@ -173,7 +173,7 @@ export default function CamMappingPage() {
                 required
                 className="w-full rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm bg-white focus:border-[var(--color-primary)] focus:outline-none"
               >
-                <option value="">Select a CAM…</option>
+                <option value="">Select a KAM…</option>
                 {availableCams.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -182,7 +182,7 @@ export default function CamMappingPage() {
               </select>
             ) : (
               <p className="text-xs text-amber-700">
-                No CAM users found. Create users with the <strong>CAM</strong> role in the Admin
+                No KAM users found. Create users with the <strong>KAM</strong> role in the Admin
                 section first.
               </p>
             )}
@@ -266,7 +266,7 @@ export default function CamMappingPage() {
           <table className="w-full text-sm">
             <thead className="bg-[var(--color-bg)]">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">CAM</th>
+                <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">KAM</th>
                 <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">Channels</th>
                 <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">Brands</th>
                 <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">Actions</th>
@@ -307,7 +307,7 @@ export default function CamMappingPage() {
               {mappings.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-[var(--color-text-muted)]">
-                    No CAM mappings configured
+                    No KAM mappings configured
                   </td>
                 </tr>
               )}
