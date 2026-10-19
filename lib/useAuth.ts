@@ -91,7 +91,7 @@ export async function authFetch(
   if (!rawBody) {
     headers["Content-Type"] = "application/json";
   }
-  return fetch(url, {
+  const res = await fetch(url, {
     // Never let the browser serve a cached GET — otherwise freshly-synced data
     // only appears after a hard reload / re-login. Caller can override.
     cache: "no-store",
@@ -102,4 +102,22 @@ export async function authFetch(
       ...(fetchOptions.headers as Record<string, string>),
     },
   });
+
+  // Centralised expired-session handling. A 401 while we still hold a stored
+  // session means the server cookie expired mid-use — clear the stale client
+  // session and bounce to /login with a notice, instead of surfacing a cryptic
+  // "Not authenticated" error. A 403 (permissions) or a fresh failed login
+  // (no stored session) does NOT trigger this.
+  if (res.status === 401 && typeof window !== "undefined") {
+    let hadSession = false;
+    try { hadSession = !!localStorage.getItem("aria-session"); } catch {}
+    if (hadSession) {
+      try { localStorage.removeItem("aria-session"); } catch {}
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login?expired=1";
+      }
+    }
+  }
+
+  return res;
 }

@@ -11,9 +11,19 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [expiredNotice, setExpiredNotice] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login, user, loading: authLoading } = useAuth();
   const router = useRouter();
+
+  // Shown when authFetch bounced here after a mid-use session expiry.
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get("expired")) setExpiredNotice(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -83,6 +93,11 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-[var(--color-border)] p-6 shadow-sm">
+          {expiredNotice && !error && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+              Your session expired. Please sign in again.
+            </div>
+          )}
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               {error}
