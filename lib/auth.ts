@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { createHmac, timingSafeEqual } from "crypto";
 import type { SessionPayload, UserRole, PermissionKey } from "./types";
 import { getRolePermissions } from "./roleData";
 import { hasPermission } from "./roles";
@@ -12,13 +13,41 @@ export function noCacheHeaders() {
   };
 }
 
+// HMAC-signed session cookies. The payload stays readable (base64url JSON) but
+// is signed with a server-only secret, so it can't be forged or tampered with —
+// the old base64-only cookie let anyone mint a `super_admin` session, and this
+// repo is public. There is NO repo-visible fallback secret: SESSION_SECRET must
+// be set in the environment, and without it we fail closed (no session issued or
+// trusted).
+function sessionSecret(): string {
+  const s = process.env.SESSION_SECRET;
+  if (!s || s.length < 16) {
+    throw new Error("SESSION_SECRET is missing or too short (set a 32+ char secret)");
+  }
+  return s;
+}
+
+function sign(body: string): string {
+  return createHmac("sha256", sessionSecret()).update(body).digest("base64url");
+}
+
 export function encodeSession(payload: SessionPayload): string {
-  return Buffer.from(JSON.stringify(payload)).toString("base64");
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${body}.${sign(body)}`;
 }
 
 export function decodeSession(cookie: string): SessionPayload | null {
   try {
-    return JSON.parse(Buffer.from(cookie, "base64").toString("utf-8"));
+    const dot = cookie.lastIndexOf(".");
+    if (dot <= 0) return null; // no signature segment → legacy/forged → reject
+    const body = cookie.slice(0, dot);
+    const given = Buffer.from(cookie.slice(dot + 1));
+    const expected = Buffer.from(sign(body));
+    // Constant-time compare; timingSafeEqual throws on length mismatch, so guard.
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      return null;
+    }
+    return JSON.parse(Buffer.from(body, "base64url").toString("utf-8")) as SessionPayload;
   } catch {
     return null;
   }
