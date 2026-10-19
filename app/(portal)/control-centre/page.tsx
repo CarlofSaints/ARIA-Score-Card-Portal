@@ -724,7 +724,7 @@ export default function ControlCentrePage() {
               <div className="p-3 rounded-lg bg-[var(--color-primary)]/5 border border-[var(--color-primary)]/10">
                 <p className="text-xs text-[var(--color-text-muted)]">Last Sync</p>
                 <p className="text-sm font-medium text-[var(--color-text)]">
-                  {new Date(syncMeta.lastSync as string).toLocaleString()}
+                  {new Date(syncMeta.lastSync as string).toLocaleString("en-ZA")}
                 </p>
                 {syncMeta.lastSyncSource && (
                   <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
@@ -736,7 +736,7 @@ export default function ControlCentrePage() {
                 <p className="text-xs text-[var(--color-text-muted)]">Last Auto-Sync</p>
                 <p className="text-sm font-medium text-[var(--color-text)]">
                   {syncMeta.lastAutoSync
-                    ? new Date(syncMeta.lastAutoSync).toLocaleString()
+                    ? new Date(syncMeta.lastAutoSync).toLocaleString("en-ZA")
                     : "Never"}
                 </p>
               </div>
@@ -890,7 +890,7 @@ export default function ControlCentrePage() {
                     <div key={i} className="rounded-lg border border-[var(--color-border)] p-3">
                       <div className="flex items-center justify-between text-xs mb-1">
                         <span className="font-medium text-[var(--color-text)]">
-                          {new Date(entry.at).toLocaleString()}
+                          {new Date(entry.at).toLocaleString("en-ZA")}
                         </span>
                         <span className="text-[var(--color-text-muted)]">
                           {entry.source} · {entry.parts.join(", ")} · {fmtMs(entry.totalMs)}
