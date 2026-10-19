@@ -6,6 +6,7 @@ import { useAuth, authFetch } from "@/lib/useAuth";
 import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { NdDetailRow } from "@/lib/types";
+import { useKamFilter } from "@/lib/useKamFilter";
 
 type SortKey = "name" | "level" | "channelName" | "subChannel" | "brand" | "ndPercent" | "rangedCount" | "totalCount";
 
@@ -37,6 +38,7 @@ export default function NdPage() {
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("all");
   const [brand, setBrand] = useState("all");
+  const { kams, kamId, setKamId, matches } = useKamFilter();
   const [sortKey, setSortKey] = useState<SortKey>("ndPercent");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -77,10 +79,11 @@ export default function NdPage() {
     return baseRows.filter((r) => {
       if (channel !== "all" && r.channelName !== channel) return false;
       if (brand !== "all" && r.brand !== brand) return false;
+      if (!matches(r.channelName, r.brand)) return false;
       if (q && !entityName(r).toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [baseRows, search, channel, brand]);
+  }, [baseRows, search, channel, brand, matches]);
 
   const sortRows = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -140,6 +143,10 @@ export default function NdPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
+        <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+          <option value="all">All KAMs</option>
+          {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+        </select>
         <select value={channel} onChange={(e) => setChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All channels</option>
           {channels.map((c) => <option key={c} value={c}>{c}</option>)}

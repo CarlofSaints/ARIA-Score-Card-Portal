@@ -6,6 +6,7 @@ import { useAuth, authFetch } from "@/lib/useAuth";
 import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { PhantomDetailRow } from "@/lib/types";
+import { useKamFilter } from "@/lib/useKamFilter";
 
 type SortKey =
   | "storeName"
@@ -49,6 +50,7 @@ export default function PhantomStorePage() {
   const [brand, setBrand] = useState("all");
   const [channel, setChannel] = useState("all");
   const [subChannel, setSubChannel] = useState("all");
+  const { kams, kamId, setKamId, matches } = useKamFilter();
   const [ranged, setRanged] = useState<RangedFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("soh");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -99,13 +101,14 @@ export default function PhantomStorePage() {
       if (q && !`${r.storeName} ${r.siteCode}`.toLowerCase().includes(q)) return false;
       if (brand !== "all" && r.brand !== brand) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
+      if (!matches(r.channelName, r.brand)) return false;
       if (subChannel !== "all" && r.subChannel !== subChannel) return false;
       if (ranged === "ranged" && r.ranged !== true) return false;
       if (ranged === "not" && r.ranged !== false) return false;
       if (ranged === "unknown" && r.ranged !== null) return false;
       return true;
     });
-  }, [baseRows, storeSearch, brand, channel, subChannel, ranged]);
+  }, [baseRows, storeSearch, brand, channel, subChannel, ranged, matches]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -171,6 +174,10 @@ export default function PhantomStorePage() {
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
+        <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+          <option value="all">All KAMs</option>
+          {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+        </select>
         <select value={brand} onChange={(e) => setBrand(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All brands</option>
           {brands.map((b) => <option key={b} value={b}>{b}</option>)}

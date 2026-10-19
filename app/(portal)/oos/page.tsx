@@ -6,6 +6,7 @@ import { useAuth, authFetch } from "@/lib/useAuth";
 import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { OosDetailRow } from "@/lib/types";
+import { useKamFilter } from "@/lib/useKamFilter";
 
 type SortKey = "storeName" | "subChannel" | "brand" | "productName";
 
@@ -27,6 +28,7 @@ export default function OosPage() {
   const [storeSearch, setStoreSearch] = useState("");
   const [brand, setBrand] = useState("all");
   const [channel, setChannel] = useState("all");
+  const { kams, kamId, setKamId, matches } = useKamFilter();
   const [sortKey, setSortKey] = useState<SortKey>("storeName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -71,9 +73,10 @@ export default function OosPage() {
       if (q && !`${r.storeName} ${r.siteCode}`.toLowerCase().includes(q)) return false;
       if (brand !== "all" && r.brand !== brand) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
+      if (!matches(r.channelName, r.brand)) return false;
       return true;
     });
-  }, [baseRows, storeSearch, brand, channel]);
+  }, [baseRows, storeSearch, brand, channel, matches]);
 
   const sortRows = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -135,6 +138,10 @@ export default function OosPage() {
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
+        <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+          <option value="all">All KAMs</option>
+          {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+        </select>
         <select value={channel} onChange={(e) => setChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All channels</option>
           {channels.map((c) => <option key={c} value={c}>{c}</option>)}
