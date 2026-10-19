@@ -10,7 +10,9 @@ import { useKamFilter } from "@/lib/useKamFilter";
 
 // View is "ytd" or a specific calendar month key "YYYY-MM".
 type SortKey = "name" | "level" | "channelName" | "value" | "units" | "prev" | "growth";
-type Level = "all" | "channel" | "store" | "product";
+type Level = "detail" | "channel" | "store" | "product";
+// Detail view groups grains in this order.
+const LEVEL_ORDER: Record<string, number> = { channel: 0, store: 1, product: 2 };
 
 function monthLabel(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
@@ -20,7 +22,6 @@ function monthLabel(ym: string): string {
 
 const COLS: { key: SortKey; label: string; width: number; align?: "right" | "center"; sortable?: boolean }[] = [
   { key: "name", label: "Entity", width: 300 },
-  { key: "level", label: "Level", width: 90 },
   { key: "channelName", label: "Channel", width: 120 },
   { key: "value", label: "Value", width: 140, align: "right" },
   { key: "units", label: "Units", width: 110, align: "right" },
@@ -49,7 +50,7 @@ export default function SalesPage() {
   const [view, setView] = useState<string>("ytd"); // "ytd" | "YYYY-MM"
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("all");
-  const [level, setLevel] = useState<Level>("all");
+  const [level, setLevel] = useState<Level>("detail");
   const { kams, kamId, setKamId, matches } = useKamFilter();
   const [sortKey, setSortKey] = useState<SortKey>("value");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -126,7 +127,7 @@ export default function SalesPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return baseRows.filter((r) => {
-      if (level !== "all" && r.level !== level) return false;
+      if (level !== "detail" && r.level !== level) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
       // KAM owns channels (+ brands at SKU grain); brand only checked on products.
       if (!matches(r.channelName, r.level === "product" ? r.brand : undefined)) return false;
@@ -175,20 +176,25 @@ export default function SalesPage() {
     };
     const get = accessor[sortKey];
     arr.sort((a, b) => {
+      // Detail view groups by grain first: Channel, then Store, then Product.
+      if (level === "detail") {
+        const lv = (LEVEL_ORDER[a.level] ?? 9) - (LEVEL_ORDER[b.level] ?? 9);
+        if (lv !== 0) return lv;
+      }
       const av = get(a);
       const bv = get(b);
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
     });
     return arr;
-  }, [filtered, sortKey, sortDir, view]);
+  }, [filtered, sortKey, sortDir, level, view]);
 
   const totals = useMemo(() => {
     // Summing across grains (channel+store+product) would multiply-count the same
     // sales, so the headline always totals ONE grain: the selected one, or (under
     // "All") the finest grain present.
-    const grain: Exclude<Level, "all"> =
-      level !== "all"
+    const grain: Exclude<Level, "detail"> =
+      level !== "detail"
         ? level
         : baseRows.some((r) => r.level === "store")
           ? "store"
@@ -275,7 +281,7 @@ export default function SalesPage() {
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
         <select value={level} onChange={(e) => setLevel(e.target.value as Level)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
-          <option value="all">All levels</option>
+          <option value="detail">Detail</option>
           <option value="channel">Channel</option>
           <option value="store">Store</option>
           <option value="product">Product</option>
@@ -319,7 +325,6 @@ export default function SalesPage() {
                 {sorted.map((r, i) => (
                   <tr key={`${r.level}|${entityName(r)}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
                     <td className="px-3 py-2 font-medium text-[var(--color-text)] truncate">{entityName(r)}</td>
-                    <td className="px-3 py-2 text-[var(--color-text-muted)] capitalize">{r.level}</td>
                     <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.channelName || "—"}</td>
                     <td className="px-3 py-2 text-right text-[var(--color-text)]">{rand(val(r))}</td>
                     <td className="px-3 py-2 text-right text-[var(--color-text)]">{(units(r) || 0).toLocaleString()}</td>
