@@ -57,6 +57,50 @@ const SYNC_PARTS: { key: SyncPart; label: string }[] = [
   { key: "salesmonths", label: "Full months (LY) — backfill" },
 ];
 
+// Shape of /api/sync's response (the fields we surface). Everything here is
+// already computed server-side — the UI just reads it back.
+type SyncResult = {
+  counts?: Record<string, number | string>;
+  phantomSkipped?: boolean;
+  phantomError?: string;
+  months?: { processed: string[]; skipped: string[]; pending: string[]; errors: Record<string, string> };
+};
+
+// One human line per synced part, with the real row counts / banked months /
+// failures — so "what actually happened" is visible, not just "Synced: sales".
+function summariseSyncPart(part: SyncPart, label: string, data: SyncResult): string {
+  const n = (v: unknown) => (typeof v === "number" ? v.toLocaleString("en-ZA") : String(v ?? "—"));
+  const c = data.counts ?? {};
+  switch (part) {
+    case "core":
+      return `• ${label}: ${n(c.channels)} channels, ${n(c.stores)} stores, ${n(c.products)} products, ${n(c.brands)} brands`;
+    case "sales":
+      return `• ${label}: ${n(c.salesDetail)} detail rows (${n(c.salesChannels)} channels, ${n(c.salesStores)} stores, ${n(c.salesProducts)} products)`;
+    case "oos":
+      return `• ${label}: ${n(c.oosDetail)} rows`;
+    case "nd":
+      return `• ${label}: ${n(c.ndDetail)} rows`;
+    case "phantom":
+      return data.phantomSkipped
+        ? `⚠ ${label}: SP failed — ${data.phantomError || "no rows"} (kept previous data)`
+        : `• ${label}: ${n(c.phantomDetail)} rows`;
+    case "salesmonths": {
+      const m = data.months ?? { processed: [], skipped: [], pending: [], errors: {} };
+      const errKeys = Object.keys(m.errors ?? {});
+      return (
+        `• ${label}: banked ${m.processed.length ? m.processed.join(", ") : "none (already up to date)"}` +
+        (m.skipped?.length ? ` · ${m.skipped.length} already done` : "") +
+        (m.pending?.length ? ` · ${m.pending.length} still pending — run again` : "") +
+        (errKeys.length
+          ? `\n   ⚠ ${errKeys.length} pull error(s): ${errKeys.slice(0, 4).join(", ")}${errKeys.length > 4 ? "…" : ""}`
+          : "")
+      );
+    }
+    default:
+      return `• ${label}: done`;
+  }
+}
+
 interface SyncLogEntry {
   at: string;
   source: string;
@@ -270,32 +314,28 @@ export default function ControlCentrePage() {
     setSyncMessage("");
     try {
       const done: SyncPart[] = [];
-      let monthsNote = "";
+      const lines: string[] = [];
       for (const part of parts) {
         const isMonths = part === "salesmonths";
+        const label = SYNC_PARTS.find((p) => p.key === part)?.label ?? part;
         setSyncMessage(
-          `Syncing ${isMonths ? "full months (LY)" : part}… (${done.length + 1}/${parts.length})` +
+          `Syncing ${label}… (${done.length + 1}/${parts.length})` +
             (isMonths ? " — pulling completed months, ~1-2 min" : "")
         );
         const res = await authFetch("/api/sync", {
           method: "POST",
           body: JSON.stringify({ parts: [part] }),
         });
-        const data = await res.json().catch(() => ({}));
+        const data = (await res.json().catch(() => ({}))) as SyncResult & { error?: string };
         if (!res.ok) {
-          setSyncMessage(`Failed on ${part}: ${data.error || `HTTP ${res.status}`}`);
+          setSyncMessage(`Failed on ${label}: ${data.error || `HTTP ${res.status}`}`);
           await refreshSyncState();
           return;
         }
-        if (isMonths && data.months) {
-          const m = data.months as { processed: string[]; pending: string[] };
-          monthsNote =
-            ` · months banked: ${m.processed.length ? m.processed.join(", ") : "none (already up to date)"}` +
-            (m.pending.length ? ` · ${m.pending.length} older month(s) still pending — run again to continue` : "");
-        }
+        lines.push(summariseSyncPart(part, label, data));
         done.push(part);
       }
-      setSyncMessage(`Synced: ${done.join(", ")}${monthsNote}`);
+      setSyncMessage(`Synced ${done.length}/${parts.length}:\n${lines.join("\n")}`);
       await refreshSyncState();
     } catch {
       setSyncMessage("Network error during sync");
@@ -831,7 +871,7 @@ export default function ControlCentrePage() {
             </span>
           )}
           {syncMessage && (
-            <span className={`text-sm ${syncMessage.startsWith("Synced") ? "text-green-600" : syncMessage.startsWith("Syncing") ? "text-[var(--color-text-muted)]" : "text-red-600"}`}>
+            <span className={`text-sm w-full whitespace-pre-line leading-relaxed ${syncMessage.startsWith("Synced") ? "text-green-600" : syncMessage.startsWith("Syncing") ? "text-[var(--color-text-muted)]" : "text-red-600"}`}>
               {syncMessage}
             </span>
           )}
