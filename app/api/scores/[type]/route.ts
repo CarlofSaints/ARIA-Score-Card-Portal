@@ -43,6 +43,16 @@ export async function GET(
       searchParams.get("period") ||
       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
+    // Optional KAM filter (channel/store/product scorecards only). CamMapping
+    // stores channel/brand NAMES; an empty owned-list means "no restriction on
+    // that dimension" — same rule as the detail pages' useKamFilter.
+    const camId = searchParams.get("cam");
+    let camMapping: CamMapping | null = null;
+    if (camId && camId !== "all" && type !== "cam") {
+      const mappings = await readJson<CamMapping[]>(`${slug}/cam-mappings.json`, []);
+      camMapping = mappings.find((m) => m.camUserId === camId) || null;
+    }
+
     const weightings = await getKpiWeightings(slug);
     const scoring = await getKpiScoring(slug);
     const metric: SalesGrowthMetric =
@@ -109,7 +119,18 @@ export async function GET(
       ]);
       const salesById = new Map(sales.map((s) => [s.entityId, s]));
 
-      scores = entities.map((e) => {
+      // A KAM owns channels (channel/store grain) and brands (product grain).
+      const belongs = (e: ScorecardChannel | ScorecardStore | ScorecardProduct): boolean => {
+        if (!camMapping) return true;
+        if (type === "product") {
+          const brand = (e as ScorecardProduct).brand;
+          return !camMapping.brandIds.length || camMapping.brandIds.includes(brand);
+        }
+        const ch = type === "channel" ? (e as ScorecardChannel).name : (e as ScorecardStore).channelName;
+        return !camMapping.channelIds.length || camMapping.channelIds.includes(ch);
+      };
+
+      scores = entities.filter(belongs).map((e) => {
         const id = e.id;
         const name = "name" in e ? e.name : id;
         const present: Record<KpiKey, boolean> = {

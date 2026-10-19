@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/useAuth";
 import { KPI_DEFS } from "@/lib/modules";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { EntityScore } from "@/lib/types";
+import { useKamFilter } from "@/lib/useKamFilter";
 
 interface ScoreTableProps {
   type: "cam" | "channel" | "store" | "product";
@@ -61,6 +62,10 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("total");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
+  // KAM filter (server-side — EntityScore rows carry no channel/brand). Not shown
+  // on the CAM scorecard, which is already per-KAM.
+  const { kams, kamId, setKamId } = useKamFilter();
+
   const cols = useMemo(
     () => [
       ...FIXED_COLS,
@@ -103,7 +108,8 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     if (!selected) return;
     setLoading(true);
     let alive = true;
-    authFetch(`/api/scores/${type}?period=${selected}`)
+    const camQ = kamId !== "all" ? `&cam=${encodeURIComponent(kamId)}` : "";
+    authFetch(`/api/scores/${type}?period=${selected}${camQ}`)
       .then((r) => r.json())
       .then((data) => {
         if (!alive) return;
@@ -117,7 +123,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     return () => {
       alive = false;
     };
-  }, [type, selected]);
+  }, [type, selected, kamId]);
 
   function valueFor(s: EntityScore, key: SortKey): number | string {
     if (key === "name") return s.entityName;
@@ -160,6 +166,16 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
             : "Current month (updates on each sync)."}
         </p>
         <div className="flex items-center gap-2">
+          {type !== "cam" && (
+            <select
+              value={kamId}
+              onChange={(e) => setKamId(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
+            >
+              <option value="all">All KAMs</option>
+              {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+            </select>
+          )}
           <label className="text-xs text-[var(--color-text-muted)]">Month</label>
           <select
             value={selected}
