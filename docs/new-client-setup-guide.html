@@ -1,0 +1,158 @@
+<!doctype html>
+<!-- Source for public/guides/ARIA-New-Client-Setup-Guide.pdf. Keep in step with app/(portal)/setup-guide/page.tsx.
+     Rebuild: msedge --headless --no-pdf-header-footer --print-to-pdf=public/guides/ARIA-New-Client-Setup-Guide.pdf docs/new-client-setup-guide.html -->
+<html lang="en-ZA">
+<head>
+<meta charset="utf-8">
+<title>ARIA Score Card: New Client Setup Guide</title>
+<style>
+  @page { size: A4; margin: 16mm 16mm 18mm; }
+  :root { --primary:#3D6273; --secondary:#5A8A9F; --accent:#E04E2A; --dark:#2D3748; --text:#1A202C; --muted:#718096; --border:#E2E8F0; --bg:#F5F7F8; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: var(--text); font-size: 10.5pt; line-height: 1.5; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .logo { width: 190px; height: 80px; overflow: hidden; }
+  .logo img { width: 246px; margin: -83px 0 0 -31px; display: block; }
+  .cover { border-bottom: 4px solid var(--accent); padding-bottom: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .cover .meta { text-align: right; color: var(--muted); font-size: 9pt; }
+  h1 { color: var(--primary); font-size: 24pt; margin: 0 0 6px; line-height: 1.15; }
+  .lead { font-size: 11.5pt; color: var(--dark); margin: 0 0 14px; }
+  .who { display: flex; gap: 10px; margin-bottom: 8px; }
+  .who div { flex: 1; background: var(--bg); border-left: 4px solid var(--primary); padding: 8px 12px; border-radius: 4px; }
+  .who div.kam { border-left-color: var(--accent); }
+  .who b { color: var(--primary); display: block; font-size: 9pt; text-transform: uppercase; letter-spacing: .06em; }
+  section { margin-top: 18px; }
+  h2 { font-size: 14pt; color: #fff; background: var(--primary); padding: 7px 12px; border-radius: 4px; margin: 0 0 10px; break-after: avoid; }
+  h2 .n { display: inline-block; background: var(--accent); border-radius: 50%; width: 22px; height: 22px; text-align: center; line-height: 22px; font-size: 11pt; margin-right: 8px; }
+  h2 .by { float: right; font-size: 9pt; font-weight: normal; opacity: .9; padding-top: 3px; }
+  ol { margin: 6px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  ul { margin: 3px 0; padding-left: 18px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 9.5pt; break-inside: auto; }
+  th { background: var(--secondary); color: #fff; text-align: left; padding: 6px 8px; }
+  td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
+  tr { break-inside: avoid; }
+  tr:nth-child(even) td { background: #FAFBFC; }
+  .note { background: #FDF0EC; border-left: 4px solid var(--accent); padding: 8px 12px; border-radius: 4px; margin: 10px 0; break-inside: avoid; }
+  .tip { background: var(--bg); border-left: 4px solid var(--secondary); padding: 8px 12px; border-radius: 4px; margin: 10px 0; break-inside: avoid; }
+  code { background: var(--bg); padding: 1px 5px; border-radius: 3px; font-size: 9.5pt; }
+  .ui { font-weight: bold; color: var(--primary); }
+  footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid var(--border); color: var(--muted); font-size: 8.5pt; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div>
+    <div class="logo"><img src="../public/aria-logo.png" alt="ARIA"></div>
+  </div>
+  <div class="meta">Score Card Portal<br>KAM guide · October 2026</div>
+</div>
+
+<h1>Setting up a new client</h1>
+<p class="lead">A new client takes about 30 minutes. No new SQL work is needed if the client already exists in SQL and sells only in PnP, SPAR, Builders, Game, Makro or Shoprite Checkers.</p>
+
+<div class="who">
+  <div><b>Your ARIA admin does</b>Step 1: create the client</div>
+  <div class="kam"><b>The KAM does</b>Steps 2 to 5: data, users, mapping, checks</div>
+</div>
+
+<section>
+  <h2>Before you start</h2>
+  <p>Get these together first. Step 1 can't be finished without them.</p>
+  <table>
+    <tr><th>What</th><th>Example</th><th>Where to get it</th></tr>
+    <tr><td>Client name as it appears in SQL</td><td>HENKEL</td><td>It shows in the SQL Server Client list in Step 1. Not there? Ask your ARIA admin to have it added first.</td></tr>
+    <tr><td>Display name for the portal</td><td>Henkel</td><td>The client</td></tr>
+    <tr><td>Web address</td><td>henkel.ariascorecard.co.za</td><td>Agree with your ARIA admin</td></tr>
+    <tr><td>Brand colours as HEX codes</td><td>#E1000F</td><td>The client's brand guide or website</td></tr>
+    <tr><td>Logo</td><td>PNG file</td><td>The client</td></tr>
+    <tr><td>Who will be the client admin</td><td>Usually you, the KAM</td><td></td></tr>
+    <tr><td>KPI weightings (must add up to 100)</td><td>Defaults are fine to start</td><td>The client</td></tr>
+    <tr><td>The KAMs, and the chains and brands each one looks after</td><td>Thandi: PnP and SPAR, all brands</td><td>Your manager</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="n">1</span>Create the client <span class="by">ARIA admin</span></h2>
+  <p>Only an ARIA admin can create a client, because this step decides whose data the portal can see. <b>KAM:</b> send your ARIA admin everything from the table above.</p>
+  <ol>
+    <li>Sign in to the ARIA admin area.</li>
+    <li>Click <span class="ui">New Client</span>.</li>
+    <li>Under <span class="ui">Client Details</span>:
+      <ul>
+        <li>Type the <span class="ui">Client Name</span>. The <span class="ui">Slug</span> fills itself in.</li>
+        <li>In <span class="ui">Custom Domains</span>, type the web address.</li>
+        <li>In <span class="ui">SQL Server Client</span>, pick the client. This one field links the portal to its data. Never leave it on "No SQL mapping".</li>
+      </ul>
+    </li>
+    <li>Under <span class="ui">Branding</span>, enter the <span class="ui">Primary Colour</span>, the other colours if they have them, then <span class="ui">Choose File</span> for the logo.</li>
+    <li>Under <span class="ui">Modules</span>, untick anything the client hasn't paid for.</li>
+    <li>Under <span class="ui">KPI Weightings</span>, move the sliders until the total says <b>100 / 100</b> in green.</li>
+    <li>Under <span class="ui">Initial Admin User</span>, enter the KAM's name, email and a temporary password. Leave both boxes ticked.</li>
+    <li>Click <span class="ui">Create Client</span>.</li>
+    <li>Your ARIA admin switches on the web address. The portal won't open at its address until this is done.</li>
+  </ol>
+  <p>The KAM gets a welcome email with their login.</p>
+</section>
+
+<section>
+  <h2><span class="n">2</span>Load the data <span class="by">KAM</span></h2>
+  <p>No data shows until the first sync has run. You never pick SQL queries: the portal runs the same ones for every client, filtered by the client name chosen in Step 1.</p>
+  <ol>
+    <li>Open the welcome email, sign in at the client's web address and set your own password.</li>
+    <li>In the left menu, click <span class="ui">Control Centre</span>.</li>
+    <li>Click <span class="ui">Sync All</span> and <b>wait for it to finish</b>. Sales alone can take about 2 minutes. Don't close the tab.</li>
+    <li>Read the result under the buttons. Each part shows how many rows it pulled. If a part failed, send that line to your ARIA admin.</li>
+    <li>Optional, for last year's sales: under <span class="ui">What to sync</span>, tick <span class="ui">Full months (LY) backfill</span>, then click <span class="ui">Sync Now</span>. Each run pulls 2 months. When it says "run again to continue", click <span class="ui">Sync Now</span> again.</li>
+    <li>Set the auto-sync: under <span class="ui">Add a time</span>, pick an hour (SA time) and click <span class="ui">+ Add</span>. Add as many as you want, then click <span class="ui">Save Schedule</span>.</li>
+  </ol>
+  <div class="tip">With no times saved, the data only updates when someone clicks Sync Now.</div>
+</section>
+
+<section>
+  <h2><span class="n">3</span>Add the users <span class="by">KAM</span></h2>
+  <p>Give every KAM the <b>CAM</b> role. Only CAM users can be picked in Step 4.</p>
+  <ol>
+    <li>In the left menu, click <span class="ui">Admin</span>, then <span class="ui">+ New User</span>.</li>
+    <li>Fill in <span class="ui">Name</span>, <span class="ui">Email</span>, a temporary <span class="ui">Password</span> and the <span class="ui">Role</span>.</li>
+    <li>Leave <span class="ui">Send welcome email with credentials</span> ticked and click <span class="ui">Create User</span>.</li>
+  </ol>
+  <table>
+    <tr><th>Role</th><th>Who gets it</th><th>What they can do</th></tr>
+    <tr><td><b>Admin</b></td><td>The KAM who runs this client</td><td>Everything in this guide</td></tr>
+    <tr><td><b>CAM</b></td><td>Each KAM</td><td>Their own scorecard and the KPI pages</td></tr>
+    <tr><td><b>Manager</b></td><td>Client managers</td><td>View scorecards and KPI pages</td></tr>
+    <tr><td><b>Rep</b></td><td>Field reps</td><td>View only what their role allows</td></tr>
+  </table>
+  <div class="tip">The Admin login isn't a CAM, so it can't have its own KAM scorecard. If the KAM running the client also needs one, add them again with the CAM role, using a different email address.</div>
+</section>
+
+<section>
+  <h2><span class="n">4</span>KAM Mapping <span class="by">KAM</span></h2>
+  <p>This tells the portal which chains and brands belong to each KAM. It drives the KAM scorecard and the KAM filter on every page. Do it after Step 2: the chain and brand lists come from the first sync.</p>
+  <ol>
+    <li>In the left menu, click <span class="ui">KAM Mapping</span>, then <span class="ui">+ Add Mapping</span>.</li>
+    <li>In <span class="ui">KAM</span>, pick the KAM.</li>
+    <li>Tick their <span class="ui">Channels</span> (chains) and <span class="ui">Brands</span>, then click <span class="ui">Save Mapping</span>.</li>
+    <li>Repeat for each KAM.</li>
+  </ol>
+</section>
+
+<section>
+  <h2><span class="n">5</span>Check it worked <span class="by">KAM</span></h2>
+  <p>Open <b>Sales</b>, <b>Out of Stocks</b>, <b>Numerical Distribution</b> and <b>Phantom Stock</b>. Each should show rows for the client. Then open a scorecard and pick a KAM from the filter.</p>
+  <table>
+    <tr><th>What you see</th><th>Why</th><th>What to do</th></tr>
+    <tr><td>Every page is empty</td><td>No sync has run, or the client isn't linked to SQL</td><td>Run Sync All. Still empty: ask your ARIA admin to check the client link.</td></tr>
+    <tr><td>One chain is missing</td><td>The client doesn't sell there, or there is no data for it yet</td><td>Check the Sync All result for that chain. Send the error to your ARIA admin.</td></tr>
+    <tr><td>Phantom is empty for one chain</td><td>The portal can't read that chain's phantom data yet</td><td>Ask your ARIA admin.</td></tr>
+    <tr><td>Client sells in a chain we don't have (e.g. Clicks)</td><td>That chain isn't in the portal yet</td><td>Ask your ARIA admin. The chain has to be added first.</td></tr>
+    <tr><td>Scorecard doesn't list older months</td><td>Scorecard months start at the first sync. Stock snapshots can't be rebuilt for the past.</td><td>Nothing to do. Older sales months are on the Sales page after the backfill.</td></tr>
+    <tr><td>"Your session expired"</td><td>Signed in for more than 24 hours</td><td>Sign in again and redo the last step.</td></tr>
+    <tr><td>"Too many requests"</td><td>Too many sign-in attempts in a minute</td><td>Wait 1 minute and try again.</td></tr>
+  </table>
+</section>
+
+<footer><span>ARIA Score Card · New client setup</span><span>Questions: your ARIA admin</span></footer>
+</body>
+</html>
