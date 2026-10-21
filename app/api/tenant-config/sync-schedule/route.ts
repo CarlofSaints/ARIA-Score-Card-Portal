@@ -22,7 +22,7 @@ function normalizeTimes(input: unknown): string[] {
 
 export async function GET(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
     const config = await getTenantConfig(slug);
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
     const body = await req.json();
     const syncTimes = normalizeTimes(body.syncTimes);

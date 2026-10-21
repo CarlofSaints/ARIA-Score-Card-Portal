@@ -15,7 +15,7 @@ export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
 
     // Optional { parts: [...] } body scopes the sync to specific KPIs/master
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
 // GET returns sync status
 export async function GET(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
     const syncMeta = await readJson<Record<string, unknown>>(`${slug}/data/sync-meta.json`, {});
 

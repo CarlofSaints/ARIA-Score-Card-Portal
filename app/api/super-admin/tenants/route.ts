@@ -7,7 +7,7 @@ import type { TenantConfig } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
   try {
-    const session = requireLogin(req);
+    const session = await requireLogin(req);
     if (!session.isSuperAdmin) {
       return Response.json({ error: "Super admin only" }, { status: 403, headers: noCacheHeaders() });
     }
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = requireLogin(req);
+    const session = await requireLogin(req);
     if (!session.isSuperAdmin) {
       return Response.json({ error: "Super admin only" }, { status: 403, headers: noCacheHeaders() });
     }

@@ -6,7 +6,7 @@ import type { ScorecardChannel } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
   try {
-    requireLogin(req);
+    await requireLogin(req);
     const slug = await getTenantSlug();
     const channels = await readJson<ScorecardChannel[]>(`${slug}/data/channels.json`, []);
     return Response.json({ channels }, { headers: noCacheHeaders() });

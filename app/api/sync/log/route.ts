@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // the Control Centre can show how long each SP took on each sync.
 export async function GET(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
     const log = await readJson<unknown[]>(`${slug}/data/sync-log.json`, []);
     return Response.json({ log }, { headers: noCacheHeaders() });

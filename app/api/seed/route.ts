@@ -5,7 +5,7 @@ import { seedTenantData } from "@/lib/seedData";
 
 export async function POST(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
     const result = await seedTenantData(slug);
     return Response.json(

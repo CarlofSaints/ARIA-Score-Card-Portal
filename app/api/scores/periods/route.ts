@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // reads to compare progression/regression month over month.
 export async function GET(req: NextRequest) {
   try {
-    requireLogin(req);
+    await requireLogin(req);
     const slug = await getTenantSlug();
 
     const folders = await listChildFolders(`${slug}/data/kpi/`);

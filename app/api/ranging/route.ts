@@ -6,6 +6,8 @@ import { readJson, writeJson, deleteBlob } from "@/lib/blob";
 import type { RangingChannelData, RangingIndexEntry } from "@/lib/types";
 
 export const runtime = "nodejs";
+
+const MAX_UNZIPPED_BYTES = 50 * 1024 * 1024;
 export const maxDuration = 60;
 
 const INDEX_KEY = (slug: string) => `${slug}/data/ranging/index.json`;
@@ -15,7 +17,7 @@ const CHANNEL_KEY = (slug: string, channel: string) =>
 // GET — list loaded ranging channels (lightweight index, no pairs)
 export async function GET(req: NextRequest) {
   try {
-    requireLogin(req);
+    await requireLogin(req);
     const slug = await getTenantSlug();
     const index = await readJson<RangingIndexEntry[]>(INDEX_KEY(slug), []);
     return Response.json({ channels: index }, { headers: noCacheHeaders() });
@@ -28,12 +30,23 @@ export async function GET(req: NextRequest) {
 // { channel, total, byStore, byProduct, pairs, rowsScanned, sourceFile }.
 export async function POST(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
 
     const buf = Buffer.from(await req.arrayBuffer());
     const isGzip = (req.headers.get("content-type") || "").includes("gzip");
-    const jsonText = isGzip ? zlib.gunzipSync(buf).toString("utf-8") : buf.toString("utf-8");
+    let jsonText: string;
+    try {
+      // Cap decompressed size so a tiny upload can't expand to exhaust memory.
+      jsonText = isGzip
+        ? zlib.gunzipSync(buf, { maxOutputLength: MAX_UNZIPPED_BYTES }).toString("utf-8")
+        : buf.toString("utf-8");
+    } catch {
+      return Response.json(
+        { error: "Upload too large or not valid gzip" },
+        { status: 413, headers: noCacheHeaders() }
+      );
+    }
     const payload = JSON.parse(jsonText) as Partial<RangingChannelData>;
 
     const channel = String(payload.channel || "").trim().toUpperCase();
@@ -82,7 +95,7 @@ export async function POST(req: NextRequest) {
 // DELETE — remove a channel's ranging data (?channel=PNP)
 export async function DELETE(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
     const channel = (new URL(req.url).searchParams.get("channel") || "")
       .trim()

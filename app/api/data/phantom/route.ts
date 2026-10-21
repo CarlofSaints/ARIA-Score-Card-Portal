@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { requireLogin, handleAuthError, noCacheHeaders } from "@/lib/auth";
+import { requirePermission, handleAuthError, noCacheHeaders } from "@/lib/auth";
 import { getTenantSlug } from "@/lib/getTenantSlug";
 import { readJson } from "@/lib/blob";
 import type { PhantomDetailRow } from "@/lib/types";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    requireLogin(req);
+    await requirePermission(req, "view_phantom");
     const slug = await getTenantSlug();
 
     const { searchParams } = new URL(req.url);

@@ -1,10 +1,15 @@
 import { NextRequest } from "next/server";
-import { getSession, noCacheHeaders } from "@/lib/auth";
+import { requireLogin, handleAuthError, noCacheHeaders } from "@/lib/auth";
 import { listClients } from "@/lib/sqlProxy";
 
 export async function GET(req: NextRequest) {
-  const session = getSession(req);
-  if (!session?.isSuperAdmin) {
+  let session;
+  try {
+    session = await requireLogin(req);
+  } catch (err) {
+    return handleAuthError(err);
+  }
+  if (!session.isSuperAdmin) {
     return Response.json(
       { error: "Unauthorized" },
       { status: 401, headers: noCacheHeaders() }

@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // client can gate navigation and pages. Super admins always get everything.
 export async function GET(req: NextRequest) {
   try {
-    const session = requireLogin(req);
+    const session = await requireLogin(req);
 
     if (session.role === "super_admin") {
       return Response.json(

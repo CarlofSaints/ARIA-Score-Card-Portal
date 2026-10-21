@@ -8,7 +8,7 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const session = requireLogin(req);
+    const session = await requireLogin(req);
     if (!session.isSuperAdmin) {
       return Response.json({ error: "Super admin only" }, { status: 403, headers: noCacheHeaders() });
     }

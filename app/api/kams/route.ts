@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // while editing stays behind manage_cam_mapping on /api/cam-mappings.
 export async function GET(req: NextRequest) {
   try {
-    requireLogin(req);
+    await requireLogin(req);
     const slug = await getTenantSlug();
     const mappings = await getCamMappings(slug);
     const kams = mappings.map((m) => ({

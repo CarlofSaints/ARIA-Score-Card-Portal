@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { requireLogin, handleAuthError, noCacheHeaders } from "@/lib/auth";
+import { requireLogin, requirePermission, handleAuthError, noCacheHeaders } from "@/lib/auth";
 import { getTenantSlug } from "@/lib/getTenantSlug";
 import { readJson } from "@/lib/blob";
 import { getKpiWeightings } from "@/lib/kpiData";
@@ -14,28 +14,36 @@ import type {
   CamMapping,
   KpiKey,
   SalesGrowthMetric,
+  PermissionKey,
 } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 type ScoreType = "cam" | "channel" | "store" | "product";
 
+// Same permission each scorecard page's PermissionGate uses.
+const VIEW_PERMS: Record<ScoreType, PermissionKey> = {
+  cam: "view_cam_scorecard",
+  channel: "view_channel_scorecard",
+  store: "view_store_scorecard",
+  product: "view_product_scorecard",
+};
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ type: string }> }
 ) {
   try {
-    requireLogin(req);
-    const slug = await getTenantSlug();
     const { type } = await params;
-
-    const validTypes: ScoreType[] = ["cam", "channel", "store", "product"];
-    if (!validTypes.includes(type as ScoreType)) {
+    if (!Object.hasOwn(VIEW_PERMS, type)) {
+      await requireLogin(req);
       return Response.json(
         { error: "Invalid score type" },
         { status: 400, headers: noCacheHeaders() }
       );
     }
+    await requirePermission(req, VIEW_PERMS[type as ScoreType]);
+    const slug = await getTenantSlug();
 
     const { searchParams } = new URL(req.url);
     const now = new Date();

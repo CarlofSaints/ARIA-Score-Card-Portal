@@ -25,17 +25,23 @@ function loadTenantsFromEnv(): TenantConfigEdge[] {
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Tenant headers are only ever set here; never trust a client-sent copy.
+  const headers = new Headers(req.headers);
+  headers.delete("x-tenant-slug");
+  headers.delete("x-tenant-config");
+  const next = () => NextResponse.next({ request: { headers } });
+
   // Super-admin paths bypass tenant resolution
   if (
     pathname.startsWith("/super-admin") ||
     pathname.startsWith("/api/super-admin")
   ) {
-    return NextResponse.next();
+    return next();
   }
 
   // Platform-level API routes
   if (pathname.startsWith("/api/platform/")) {
-    return NextResponse.next();
+    return next();
   }
 
   const hostname = req.headers.get("host") || "";
@@ -56,10 +62,9 @@ export function proxy(req: NextRequest) {
   );
 
   if (tenant) {
-    const headers = new Headers(req.headers);
     headers.set("x-tenant-slug", tenant.slug);
     headers.set("x-tenant-config", JSON.stringify(tenant));
-    return NextResponse.next({ request: { headers } });
+    return next();
   }
 
   // 3. DEV_TENANT_SLUG fallback (local dev, Vercel preview, main domain)
@@ -67,12 +72,11 @@ export function proxy(req: NextRequest) {
     const fallbackTenant = tenants.find(
       (t) => t.slug === devSlug && t.active
     );
-    const headers = new Headers(req.headers);
     headers.set("x-tenant-slug", devSlug);
     if (fallbackTenant) {
       headers.set("x-tenant-config", JSON.stringify(fallbackTenant));
     }
-    return NextResponse.next({ request: { headers } });
+    return next();
   }
 
   // 4. Vercel preview URLs → route to first active tenant
@@ -81,10 +85,9 @@ export function proxy(req: NextRequest) {
   if (isVercelDomain && tenants.length > 0) {
     const fallback = tenants.find((t) => t.active);
     if (fallback) {
-      const headers = new Headers(req.headers);
       headers.set("x-tenant-slug", fallback.slug);
       headers.set("x-tenant-config", JSON.stringify(fallback));
-      return NextResponse.next({ request: { headers } });
+      return next();
     }
   }
 

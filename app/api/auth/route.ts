@@ -3,7 +3,14 @@ import { getTenantSlug } from "@/lib/getTenantSlug";
 import { getUserByEmail, verifyPassword, updateUser } from "@/lib/userData";
 import { readJson } from "@/lib/blob";
 import bcrypt from "bcryptjs";
-import { encodeSession, sessionCookieOptions, noCacheHeaders } from "@/lib/auth";
+import {
+  encodeSession,
+  sessionCookieOptions,
+  sessionExp,
+  SESSION_TTL,
+  SUPER_ADMIN_SESSION_TTL,
+  noCacheHeaders,
+} from "@/lib/auth";
 import type { SessionPayload, SuperAdmin } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -34,6 +41,7 @@ export async function POST(req: NextRequest) {
           role: user.role,
           tenantSlug: slug,
           forcePasswordChange: user.forcePasswordChange,
+          exp: sessionExp(SESSION_TTL),
         };
 
         const encoded = encodeSession(session);
@@ -62,10 +70,11 @@ export async function POST(req: NextRequest) {
           role: "super_admin",
           tenantSlug: slug,
           isSuperAdmin: true,
+          exp: sessionExp(SUPER_ADMIN_SESSION_TTL),
         };
 
         const encoded = encodeSession(session);
-        const cookieOpts = sessionCookieOptions(60 * 60 * 8);
+        const cookieOpts = sessionCookieOptions(SUPER_ADMIN_SESSION_TTL);
         const res = NextResponse.json(
           { user: session },
           { headers: noCacheHeaders() }

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // Calls the proxy server-side so the API key never reaches the browser.
 export async function GET(req: NextRequest) {
   try {
-    requireRole(req, "super_admin");
+    await requireRole(req, "super_admin");
     try {
       const names = await listProxyQueries();
       return Response.json({ names, ok: true }, { headers: noCacheHeaders() });

@@ -5,7 +5,7 @@ import { readJson } from "@/lib/blob";
 
 export async function GET(req: NextRequest) {
   try {
-    requireLogin(req);
+    await requireLogin(req);
     const slug = await getTenantSlug();
     const brands = await readJson<string[]>(`${slug}/data/brands.json`, []);
     return Response.json({ brands }, { headers: noCacheHeaders() });

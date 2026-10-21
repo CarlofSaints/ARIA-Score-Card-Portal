@@ -178,6 +178,7 @@ export interface SessionPayload {
   tenantSlug: string;
   forcePasswordChange?: boolean;
   isSuperAdmin?: boolean;
+  exp: number; // epoch seconds; checked server-side in decodeSession
 }
 
 // ── Password Reset ──

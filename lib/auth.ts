@@ -3,6 +3,10 @@ import { createHmac, timingSafeEqual } from "crypto";
 import type { SessionPayload, UserRole, PermissionKey } from "./types";
 import { getRolePermissions } from "./roleData";
 import { hasPermission } from "./roles";
+import { getTenantSlug } from "./getTenantSlug";
+import { getUserById } from "./userData";
+import { readJson } from "./blob";
+import type { SuperAdmin } from "./types";
 
 const COOKIE_NAME = "aria-session";
 
@@ -31,6 +35,15 @@ function sign(body: string): string {
   return createHmac("sha256", sessionSecret()).update(body).digest("base64url");
 }
 
+// Session lifetimes (seconds). The cookie maxAge and the signed `exp` use the
+// same value, so an old cookie stops working server-side even if it is kept.
+export const SESSION_TTL = 60 * 60 * 24;
+export const SUPER_ADMIN_SESSION_TTL = 60 * 60 * 8;
+
+export function sessionExp(ttlSeconds: number): number {
+  return Math.floor(Date.now() / 1000) + ttlSeconds;
+}
+
 export function encodeSession(payload: SessionPayload): string {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${body}.${sign(body)}`;
@@ -47,7 +60,10 @@ export function decodeSession(cookie: string): SessionPayload | null {
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
       return null;
     }
-    return JSON.parse(Buffer.from(body, "base64url").toString("utf-8")) as SessionPayload;
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf-8")) as SessionPayload;
+    // Cookies issued before `exp` existed are rejected: those users sign in again.
+    if (typeof payload.exp !== "number" || payload.exp <= Date.now() / 1000) return null;
+    return payload;
   } catch {
     return null;
   }
@@ -59,19 +75,53 @@ export function getSession(req: NextRequest): SessionPayload | null {
   return decodeSession(cookie);
 }
 
-export function requireLogin(req: NextRequest): SessionPayload {
+/**
+ * Valid session for THIS request's tenant. Non-super-admin sessions must belong
+ * to the host's tenant, and the user is re-read so deleted/deactivated users are
+ * locked out at once and role changes apply without a fresh sign-in.
+ */
+export async function requireLogin(req: NextRequest): Promise<SessionPayload> {
   const session = getSession(req);
   if (!session) {
     throw new AuthError("Not authenticated", 401);
   }
-  return session;
+
+  if (session.isSuperAdmin) {
+    const admins = await readJson<SuperAdmin[]>("_platform/super-admins.json", []);
+    if (!admins.some((a) => a.id === session.userId)) {
+      throw new AuthError("Not authenticated", 401);
+    }
+    return session;
+  }
+
+  let hostSlug: string;
+  try {
+    hostSlug = await getTenantSlug();
+  } catch {
+    throw new AuthError("Forbidden", 403);
+  }
+  if (session.tenantSlug !== hostSlug) {
+    throw new AuthError("Forbidden", 403);
+  }
+
+  const user = await getUserById(session.tenantSlug, session.userId);
+  if (!user || !user.active) {
+    throw new AuthError("Not authenticated", 401);
+  }
+  return {
+    ...session,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    forcePasswordChange: user.forcePasswordChange,
+  };
 }
 
-export function requireRole(
+export async function requireRole(
   req: NextRequest,
   minRole: UserRole
-): SessionPayload {
-  const session = requireLogin(req);
+): Promise<SessionPayload> {
+  const session = await requireLogin(req);
   const hierarchy: UserRole[] = [
     "super_admin",
     "admin",
@@ -89,7 +139,7 @@ export async function requirePermission(
   req: NextRequest,
   perm: PermissionKey
 ): Promise<SessionPayload> {
-  const session = requireLogin(req);
+  const session = await requireLogin(req);
   if (session.role === "super_admin") return session;
 
   const rolePerms = await getRolePermissions(session.tenantSlug);
@@ -99,7 +149,7 @@ export async function requirePermission(
   return session;
 }
 
-export function sessionCookieOptions(maxAge = 60 * 60 * 24) {
+export function sessionCookieOptions(maxAge = SESSION_TTL) {
   return {
     name: COOKIE_NAME,
     httpOnly: true,

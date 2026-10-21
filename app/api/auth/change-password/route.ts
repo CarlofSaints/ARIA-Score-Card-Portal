@@ -1,19 +1,23 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   requireLogin,
   handleAuthError,
   noCacheHeaders,
+  encodeSession,
+  sessionCookieOptions,
+  sessionExp,
+  SESSION_TTL,
 } from "@/lib/auth";
 import { getUserById, verifyPassword, setUserPassword } from "@/lib/userData";
 
 export async function POST(req: NextRequest) {
   try {
-    const session = requireLogin(req);
+    const session = await requireLogin(req);
     const { currentPassword, newPassword } = await req.json();
 
-    if (!newPassword || newPassword.length < 6) {
+    if (typeof newPassword !== "string" || newPassword.length < 8) {
       return Response.json(
-        { error: "New password must be at least 6 characters" },
+        { error: "New password must be at least 8 characters" },
         { status: 400, headers: noCacheHeaders() }
       );
     }
@@ -26,8 +30,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // If not a forced change, verify current password
-    if (!session.forcePasswordChange) {
+    // If not a forced change (per the STORED user, not the cookie), verify current password
+    if (!user.forcePasswordChange) {
       if (!currentPassword) {
         return Response.json(
           { error: "Current password is required" },
@@ -45,10 +49,18 @@ export async function POST(req: NextRequest) {
 
     await setUserPassword(session.tenantSlug, session.userId, newPassword);
 
-    return Response.json(
+    // Reissue the cookie so it no longer carries forcePasswordChange.
+    const res = NextResponse.json(
       { success: true, message: "Password changed successfully" },
       { headers: noCacheHeaders() }
     );
+    const cookieOpts = sessionCookieOptions();
+    res.cookies.set(
+      cookieOpts.name,
+      encodeSession({ ...session, forcePasswordChange: false, exp: sessionExp(SESSION_TTL) }),
+      cookieOpts
+    );
+    return res;
   } catch (err) {
     return handleAuthError(err);
   }

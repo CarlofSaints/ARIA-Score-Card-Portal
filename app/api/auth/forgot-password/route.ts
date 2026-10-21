@@ -31,8 +31,16 @@ export async function POST(req: NextRequest) {
     const config = await getTenantConfig(slug);
     const tenantName = config?.name || "ARIA Score Card";
 
-    // Build reset URL
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || req.nextUrl.origin;
+    // Build reset URL from configured values only, never the request's Host.
+    const domain = config?.domains?.[0];
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (domain ? `https://${domain}` : "");
+    if (!siteUrl) {
+      console.error(`Forgot password: no NEXT_PUBLIC_SITE_URL or domain configured for tenant ${slug}`);
+      return Response.json(
+        { error: "Internal server error" },
+        { status: 500, headers: noCacheHeaders() }
+      );
+    }
     const resetUrl = `${siteUrl}/reset-password?token=${token}`;
 
     await sendPasswordResetEmail({

@@ -6,7 +6,7 @@ import { updateTenant } from "@/lib/tenantConfig";
 
 export async function GET(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
     const config = await getTenantConfig(slug);
 
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    requireRole(req, "admin");
+    await requireRole(req, "admin");
     const slug = await getTenantSlug();
     const body = await req.json();
     const days = Math.max(7, Math.min(365, Number(body.ndRollingDays) || 60));

@@ -12,6 +12,16 @@ const FROM = "ARIA Score Card <noreply@outerjoin.co.za>";
 const ARIA_LOGO = "https://aria-score-card-portal.vercel.app/aria-logo.png";
 const BASE_DOMAIN = "ariascorecard.co.za";
 
+// Every value interpolated into email HTML goes through this.
+function esc(v: unknown): string {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /**
  * Build the tenant's portal URL.
  * Priority: 1) explicit custom domain, 2) slug.ariascorecard.co.za, 3) NEXT_PUBLIC_SITE_URL fallback
@@ -39,11 +49,11 @@ export async function sendWelcomeEmail(params: {
   enabledModules?: ModuleKey[];
 }): Promise<void> {
   const resend = getResend();
-  const primary = params.branding?.primaryColor || "#3D6273";
-  const accent = params.branding?.accentColor || "#E04E2A";
-  const clientLogo = params.branding?.logoUrl;
+  const primary = esc(params.branding?.primaryColor || "#3D6273");
+  const accent = esc(params.branding?.accentColor || "#E04E2A");
+  const clientLogo = params.branding?.logoUrl ? esc(params.branding.logoUrl) : "";
   const siteUrl = getTenantUrl(params.tenantSlug, params.tenantDomains);
-  const loginUrl = siteUrl ? `${siteUrl}/login` : "";
+  const loginUrl = siteUrl ? esc(`${siteUrl}/login`) : "";
 
   // Build module list
   const enabledSet = new Set(params.enabledModules || []);
@@ -79,17 +89,17 @@ export async function sendWelcomeEmail(params: {
             <td style="padding-right:${clientLogo ? "16px" : "0"};">
               <img src="${ARIA_LOGO}" alt="ARIA" width="40" height="40" style="display:block;border-radius:8px;" />
             </td>
-            ${clientLogo ? `<td><img src="${clientLogo}" alt="${params.tenantName}" width="40" height="40" style="display:block;border-radius:8px;object-fit:contain;background:#fff;padding:4px;" /></td>` : ""}
+            ${clientLogo ? `<td><img src="${clientLogo}" alt="${esc(params.tenantName)}" width="40" height="40" style="display:block;border-radius:8px;object-fit:contain;background:#fff;padding:4px;" /></td>` : ""}
           </tr></table>
           <h1 style="color:#ffffff;font-size:22px;margin:16px 0 4px;font-weight:700;">Welcome to ARIA Score Card</h1>
-          <p style="color:rgba(255,255,255,0.85);font-size:14px;margin:0;">${params.tenantName}</p>
+          <p style="color:rgba(255,255,255,0.85);font-size:14px;margin:0;">${esc(params.tenantName)}</p>
         </div>
 
         <!-- Body -->
         <div style="padding:32px;border:1px solid #E2E8F0;border-top:none;border-radius:0 0 8px 8px;">
-          <p style="font-size:15px;color:#2D3748;margin:0 0 16px;">Hi ${params.name},</p>
+          <p style="font-size:15px;color:#2D3748;margin:0 0 16px;">Hi ${esc(params.name)},</p>
           <p style="font-size:14px;color:#4A5568;margin:0 0 24px;line-height:1.6;">
-            Your scorecard portal account has been created for <strong>${params.tenantName}</strong>.
+            Your scorecard portal account has been created for <strong>${esc(params.tenantName)}</strong>.
             You can use the credentials below to log in and start tracking performance across your scorecards.
           </p>
 
@@ -99,11 +109,11 @@ export async function sendWelcomeEmail(params: {
             <table style="width:100%;border-collapse:collapse;">
               <tr>
                 <td style="padding:6px 0;font-size:13px;color:#718096;width:80px;">Email</td>
-                <td style="padding:6px 0;font-size:14px;color:#2D3748;font-weight:600;">${params.email}</td>
+                <td style="padding:6px 0;font-size:14px;color:#2D3748;font-weight:600;">${esc(params.email)}</td>
               </tr>
               <tr>
                 <td style="padding:6px 0;font-size:13px;color:#718096;">Password</td>
-                <td style="padding:6px 0;font-size:14px;color:#2D3748;font-family:monospace;font-weight:600;">${params.password}</td>
+                <td style="padding:6px 0;font-size:14px;color:#2D3748;font-family:monospace;font-weight:600;">${esc(params.password)}</td>
               </tr>
             </table>
           </div>
@@ -156,10 +166,10 @@ export async function sendPasswordResetEmail(params: {
     html: `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
         <h2 style="color:#3D6273;">Password Reset</h2>
-        <p>Hi ${params.name},</p>
-        <p>You requested a password reset for your <strong>${params.tenantName}</strong> account.</p>
+        <p>Hi ${esc(params.name)},</p>
+        <p>You requested a password reset for your <strong>${esc(params.tenantName)}</strong> account.</p>
         <p>
-          <a href="${params.resetUrl}"
+          <a href="${esc(params.resetUrl)}"
              style="display:inline-block;padding:12px 24px;background:#3D6273;color:#fff;text-decoration:none;border-radius:6px;">
             Reset Password
           </a>
