@@ -2,10 +2,12 @@
 // in-memory fake storage API and starts `next dev` pointed at it.
 //   node scripts/xtenant-check.mjs        (exit code 1 on any failure)
 import http from "node:http";
+import { writeFileSync, mkdtempSync } from "node:fs";
+import os from "node:os";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SECRET = "local-test-secret-0123456789abcdef";
@@ -42,6 +44,8 @@ const store = http.createServer((req, res) => {
   res.end(JSON.stringify({ url: "", pathname: "", contentType: "", contentDisposition: "" }));
 });
 await new Promise((r) => store.listen(STORE_PORT, "127.0.0.1", r));
+const DATA_FILE = path.join(mkdtempSync(path.join(os.tmpdir(), "xtenant-")), "blob.json");
+writeFileSync(DATA_FILE, JSON.stringify(data));
 
 // ── app ──
 const tenants = [
@@ -54,6 +58,9 @@ Object.assign(env, {
   SESSION_SECRET: SECRET,
   PLATFORM_TENANTS_JSON: JSON.stringify(tenants),
   BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_localfake_notarealtoken",
+  PRIVATE_BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_localfake_notarealtoken",
+  FAKE_BLOB_DATA_FILE: DATA_FILE,
+  NODE_OPTIONS: `${env.NODE_OPTIONS || ""} --import ${pathToFileURL(path.join(ROOT, "scripts/fake-private-blob.mjs")).href}`,
   VERCEL_BLOB_API_URL: `http://127.0.0.1:${STORE_PORT}`,
   NEXT_TELEMETRY_DISABLED: "1",
 });
@@ -123,6 +130,6 @@ await expect("deleted super admin", "/api/users", "b.localhost", mint({ userId: 
 
 app.kill();
 store.close();
-if (fail) console.log(appLog.split("\n").slice(-40).join("\n"));
+if (fail) console.log(appLog.split("\n").filter((l) => /fake-private|rror|blob/i.test(l)).slice(0, 30).join("\n"));
 console.log(fail ? `\nRESULT: ${fail} check(s) FAILED` : "\nRESULT: all checks passed");
 process.exit(fail ? 1 : 0);
