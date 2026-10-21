@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { tenantProof } from "./lib/tenantProof";
 
 interface TenantConfigEdge {
   slug: string;
@@ -29,7 +30,13 @@ export function proxy(req: NextRequest) {
   const headers = new Headers(req.headers);
   headers.delete("x-tenant-slug");
   headers.delete("x-tenant-config");
-  const next = () => NextResponse.next({ request: { headers } });
+  headers.delete("x-tenant-proof");
+  const next = () => {
+    const slug = headers.get("x-tenant-slug");
+    const proof = slug ? tenantProof(slug) : null;
+    if (proof) headers.set("x-tenant-proof", proof);
+    return NextResponse.next({ request: { headers } });
+  };
 
   // Super-admin paths bypass tenant resolution
   if (

@@ -5,7 +5,7 @@ import { getRolePermissions } from "./roleData";
 import { hasPermission } from "./roles";
 import { getTenantSlug } from "./getTenantSlug";
 import { getUsers } from "./userData";
-import { readJson } from "./blob";
+import { readJson, StoreUnavailableError } from "./blob";
 import type { SuperAdmin } from "./types";
 
 const COOKIE_NAME = "aria-session";
@@ -76,14 +76,16 @@ export function getSession(req: NextRequest): SessionPayload | null {
 }
 
 // Per-request memo, keyed on the request object so nothing is shared between
-// requests: several auth checks in one handler read each file once. A failed
-// store read becomes a 503, never a 401, so the client keeps its session.
+// requests: several auth checks in one handler read each file once. A store
+// outage becomes a 503, never a 401, so the client keeps its session; config
+// errors (no token, corrupt file) fall through to handleAuthError as a 500.
 const perRequest = new WeakMap<NextRequest, Map<string, Promise<unknown>>>();
 function once<T>(req: NextRequest, key: string, load: () => Promise<T>): Promise<T> {
   let m = perRequest.get(req);
   if (!m) perRequest.set(req, (m = new Map()));
   if (!m.has(key)) {
     m.set(key, load().catch((err) => {
+      if (!(err instanceof StoreUnavailableError)) throw err;
       console.error(err);
       throw new AuthError("Temporarily unavailable, please try again", 503);
     }));
@@ -106,7 +108,8 @@ export async function requireLogin(req: NextRequest): Promise<SessionPayload> {
     const admins = await once(req, "super-admins", () =>
       readJson<SuperAdmin[]>("_platform/super-admins.json", [])
     );
-    if (!admins.some((a) => a.id === session.userId)) {
+    const admin = admins.find((a) => a.id === session.userId);
+    if (!admin || (admin.passwordChangedAt ?? "") !== (session.passwordChangedAt ?? "")) {
       throw new AuthError("Not authenticated", 401);
     }
     return session;

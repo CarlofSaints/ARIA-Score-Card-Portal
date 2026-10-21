@@ -7,8 +7,9 @@ export async function GET(req: NextRequest) {
   try {
     // Try edge config from header first (set by proxy)
     const configHeader = req.headers.get("x-tenant-config");
-    if (configHeader) {
-      const edge = JSON.parse(configHeader);
+    const edge = configHeader ? JSON.parse(configHeader) : null;
+    // Only the proxy's copy: it must match the (signed) tenant slug.
+    if (edge && edge.slug === (await getTenantSlug())) {
       return Response.json(
         {
           slug: edge.slug,

@@ -1,8 +1,12 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   requirePermission,
   handleAuthError,
   noCacheHeaders,
+  encodeSession,
+  sessionCookieOptions,
+  sessionExp,
+  SESSION_TTL,
 } from "@/lib/auth";
 import { getTenantSlug } from "@/lib/getTenantSlug";
 import {
@@ -76,7 +80,7 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    await requirePermission(req, "manage_users");
+    const session = await requirePermission(req, "manage_users");
     const slug = await getTenantSlug();
     const body = await req.json();
     const { id, password, name, email, role, active, forcePasswordChange } = body;
@@ -103,6 +107,7 @@ export async function PUT(req: NextRequest) {
     // A password change is handled separately so it gets hashed (updateUser
     // only accepts profile fields). setUserPassword also clears forcePasswordChange,
     // so re-apply the flag afterwards if the caller asked to force a change.
+    let ownPasswordChangedAt: string | undefined;
     if (typeof password === "string" && password.length > 0) {
       if (password.length < MIN_PASSWORD_LENGTH) {
         return Response.json(
@@ -110,7 +115,8 @@ export async function PUT(req: NextRequest) {
           { status: 400, headers: noCacheHeaders() }
         );
       }
-      await setUserPassword(slug, id, password);
+      const changedAt = await setUserPassword(slug, id, password);
+      if (!session.isSuperAdmin && id === session.userId) ownPasswordChangedAt = changedAt;
     }
 
     // Only call updateUser if there are profile fields to change (avoids a
@@ -124,7 +130,23 @@ export async function PUT(req: NextRequest) {
     }
 
     const { password: _, ...safe } = user;
-    return Response.json({ user: safe }, { headers: noCacheHeaders() });
+    const res = NextResponse.json({ user: safe }, { headers: noCacheHeaders() });
+    // Changing your OWN password signs out older sessions: keep this one (as change-password does).
+    if (ownPasswordChangedAt) {
+      const cookieOpts = sessionCookieOptions();
+      res.cookies.set(
+        cookieOpts.name,
+        encodeSession({
+          ...session,
+          role: user.role,
+          forcePasswordChange: user.forcePasswordChange,
+          passwordChangedAt: ownPasswordChangedAt,
+          exp: sessionExp(SESSION_TTL),
+        }),
+        cookieOpts
+      );
+    }
+    return res;
   } catch (err) {
     return handleAuthError(err);
   }

@@ -169,6 +169,7 @@ export interface SuperAdmin {
   email: string;
   password: string; // bcrypt hash
   createdAt: string;
+  passwordChangedAt?: string; // ISO; sessions issued before it are rejected
 }
 
 export interface SessionPayload {

@@ -25,7 +25,9 @@ const data = {
     { ...user("a-pw", "admin"), passwordChangedAt: "2026-10-21T10:00:00.000Z" }],
   "tenant-b/users.json": [user("b-admin", "admin")],
   "tenant-c/users.json": "__FAIL_500__", // store read error
-  "_platform/super-admins.json": [{ id: "sa1", name: "SA", email: "sa@x.test", password: "x", createdAt: now }],
+  "tenant-d/users.json": "__CORRUPT__", // corrupt file
+  "_platform/super-admins.json": [{ id: "sa1", name: "SA", email: "sa@x.test", password: "x", createdAt: now },
+    { id: "sa-pw", name: "SA2", email: "sa2@x.test", password: "x", createdAt: now, passwordChangedAt: "2026-10-21T10:00:00.000Z" }],
 };
 const store = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
@@ -54,6 +56,7 @@ const tenants = [
   { slug: "tenant-a", name: "A", primaryColor: "#000", domains: ["a.localhost"], active: true, enabledModules: [] },
   { slug: "tenant-b", name: "B", primaryColor: "#000", domains: ["b.localhost"], active: true, enabledModules: [] },
   { slug: "tenant-c", name: "C", primaryColor: "#000", domains: ["c.localhost"], active: true, enabledModules: [] },
+  { slug: "tenant-d", name: "D", primaryColor: "#000", domains: ["d.localhost"], active: true, enabledModules: [] },
 ];
 const env = { ...process.env };
 for (const k of Object.keys(env)) if (/BLOB|DEV_TENANT_SLUG|PLATFORM_DOMAIN/i.test(k)) delete env[k];
@@ -131,6 +134,10 @@ await expect("rep lacks view_channel_scorecard", "/api/scores/channel", "a.local
 await expect("cookie from before a password change", "/api/users", "a.localhost", sess("a-pw", "admin"), is(401));
 await expect("cookie issued after the password change", "/api/users", "a.localhost", sess("a-pw", "admin", { passwordChangedAt: "2026-10-21T10:00:00.000Z" }), not403);
 await expect("store read error -> 503, not 401", "/api/users", "c.localhost", sess("c-admin", "admin", { tenantSlug: "tenant-c" }), is(503));
+await expect("corrupt store file -> 500, not 503/401", "/api/users", "d.localhost", sess("d-admin", "admin", { tenantSlug: "tenant-d" }), is(500));
+await expect("forged x-tenant-slug on a path the proxy skips", "/api/scores/x.png", "b.localhost", adminA, is(403), { "x-tenant-slug": "tenant-a" });
+await expect("super admin cookie from before a password reset", "/api/users", "b.localhost", mint({ userId: "sa-pw", role: "super_admin", tenantSlug: "_platform", isSuperAdmin: true, exp }), is(401));
+await expect("super admin cookie after the reset", "/api/users", "b.localhost", mint({ userId: "sa-pw", role: "super_admin", tenantSlug: "_platform", isSuperAdmin: true, passwordChangedAt: "2026-10-21T10:00:00.000Z", exp }), not403);
 await expect("super admin on tenant-B host", "/api/users", "b.localhost", mint({ userId: "sa1", role: "super_admin", tenantSlug: "_platform", isSuperAdmin: true, exp }), not403);
 await expect("deleted super admin", "/api/users", "b.localhost", mint({ userId: "sa-gone", role: "super_admin", tenantSlug: "_platform", isSuperAdmin: true, exp }), is(401));
 

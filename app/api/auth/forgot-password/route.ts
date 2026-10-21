@@ -32,7 +32,9 @@ export async function POST(req: NextRequest) {
     const tenantName = config?.name || "ARIA Score Card";
 
     // Build reset URL from configured values only, never the request's Host.
-    const siteUrl = getTenantUrl(slug, config?.domains);
+    // Tenant domain first, then the site URL, then the slug subdomain.
+    const domain = config?.domains?.[0];
+    const siteUrl = domain ? `https://${domain}` : process.env.NEXT_PUBLIC_SITE_URL || getTenantUrl(slug);
     const resetUrl = `${siteUrl}/reset-password?token=${token}`;
 
     await sendPasswordResetEmail({

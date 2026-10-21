@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
       role: "super_admin",
       tenantSlug: "_platform",
       isSuperAdmin: true,
+      passwordChangedAt: admin.passwordChangedAt,
       exp: sessionExp(SUPER_ADMIN_SESSION_TTL),
     };
 

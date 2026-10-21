@@ -10,11 +10,24 @@ const token = () => {
   return t;
 };
 
+// A network failure or 5xx from the store: worth retrying (auth maps it to 503).
+export class StoreUnavailableError extends Error {}
+
 // The fallback is ONLY for a file that does not exist yet. Any other failure
 // (no token, network, bad JSON) throws, so a read-modify-write can never save a
 // near-empty copy over the real data.
 export async function readJson<T>(key: string, fallback: T): Promise<T> {
-  const result = await get(key, { access: "private", useCache: false, token: token() });
+  const t = token(); // a missing token is a config error, not transient
+  let result;
+  try {
+    result = await get(key, { access: "private", useCache: false, token: t });
+  } catch (err) {
+    // shortcut: the SDK only reports the HTTP status in its message; revisit if it adds a status field.
+    if (err instanceof TypeError || /: 5\d\d\b/.test(String((err as Error)?.message))) {
+      throw new StoreUnavailableError(`Store unavailable reading ${key}`, { cause: err });
+    }
+    throw err;
+  }
   if (!result) return fallback;
   if (result.statusCode !== 200) throw new Error(`Unexpected status ${result.statusCode} reading ${key}`);
   return JSON.parse(await new Response(result.stream).text()) as T;

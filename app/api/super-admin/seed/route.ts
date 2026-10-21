@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { email, name, password } = await req.json();
+    const { email, name, password, reset } = await req.json();
     if (!email || !name || !password) {
       return Response.json(
         { error: "email, name, and password are required" },
@@ -40,22 +40,31 @@ export async function POST(req: NextRequest) {
     }
 
     const existing = await readJson<SuperAdmin[]>(SA_KEY, []);
-    // Never overwrite an existing super admin.
-    if (existing.some((sa) => sa.email.toLowerCase() === email.toLowerCase())) {
-      return Response.json(
-        { error: "Super admin already exists" },
-        { status: 409, headers: noCacheHeaders() }
-      );
+    const now = new Date().toISOString();
+    const hash = await bcrypt.hash(password, 10);
+    const match = existing.find((sa) => sa.email.toLowerCase() === email.toLowerCase());
+    if (match) {
+      // Password recovery: only while seeding is switched on AND explicitly asked for.
+      if (process.env.SEED_ENABLED !== "1" || reset !== true) {
+        return Response.json(
+          { error: "Super admin already exists" },
+          { status: 409, headers: noCacheHeaders() }
+        );
+      }
+      match.password = hash;
+      match.passwordChangedAt = now; // signs out this admin's existing sessions
+      await writeJson(SA_KEY, existing);
+      return Response.json({ success: true, id: match.id }, { headers: noCacheHeaders() });
     }
 
-    const hash = await bcrypt.hash(password, 10);
     const adminId = uuid();
     existing.push({
       id: adminId,
       name,
       email: email.toLowerCase(),
       password: hash,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      passwordChangedAt: now,
     });
 
     await writeJson(SA_KEY, existing);
