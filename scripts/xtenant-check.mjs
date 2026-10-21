@@ -21,8 +21,10 @@ const user = (id, role, active = true) => ({
   forcePasswordChange: false, active, createdAt: now,
 });
 const data = {
-  "tenant-a/users.json": [user("a-admin", "admin"), user("a-rep", "rep"), user("a-cam", "cam"), user("a-off", "admin", false)],
+  "tenant-a/users.json": [user("a-admin", "admin"), user("a-rep", "rep"), user("a-cam", "cam"), user("a-off", "admin", false),
+    { ...user("a-pw", "admin"), passwordChangedAt: "2026-10-21T10:00:00.000Z" }],
   "tenant-b/users.json": [user("b-admin", "admin")],
+  "tenant-c/users.json": "__FAIL_500__", // store read error
   "_platform/super-admins.json": [{ id: "sa1", name: "SA", email: "sa@x.test", password: "x", createdAt: now }],
 };
 const store = http.createServer((req, res) => {
@@ -51,6 +53,7 @@ writeFileSync(DATA_FILE, JSON.stringify(data));
 const tenants = [
   { slug: "tenant-a", name: "A", primaryColor: "#000", domains: ["a.localhost"], active: true, enabledModules: [] },
   { slug: "tenant-b", name: "B", primaryColor: "#000", domains: ["b.localhost"], active: true, enabledModules: [] },
+  { slug: "tenant-c", name: "C", primaryColor: "#000", domains: ["c.localhost"], active: true, enabledModules: [] },
 ];
 const env = { ...process.env };
 for (const k of Object.keys(env)) if (/BLOB|DEV_TENANT_SLUG|PLATFORM_DOMAIN/i.test(k)) delete env[k];
@@ -125,6 +128,9 @@ await expect("inactive user", "/api/users", "a.localhost", sess("a-off", "admin"
 await expect("deleted user", "/api/users", "a.localhost", sess("ghost", "admin"), is(401));
 await expect("rep cookie claiming admin (role from store)", "/api/users", "a.localhost", sess("a-rep", "admin"), is(403));
 await expect("rep lacks view_channel_scorecard", "/api/scores/channel", "a.localhost", repA, is(403));
+await expect("cookie from before a password change", "/api/users", "a.localhost", sess("a-pw", "admin"), is(401));
+await expect("cookie issued after the password change", "/api/users", "a.localhost", sess("a-pw", "admin", { passwordChangedAt: "2026-10-21T10:00:00.000Z" }), not403);
+await expect("store read error -> 503, not 401", "/api/users", "c.localhost", sess("c-admin", "admin", { tenantSlug: "tenant-c" }), is(503));
 await expect("super admin on tenant-B host", "/api/users", "b.localhost", mint({ userId: "sa1", role: "super_admin", tenantSlug: "_platform", isSuperAdmin: true, exp }), not403);
 await expect("deleted super admin", "/api/users", "b.localhost", mint({ userId: "sa-gone", role: "super_admin", tenantSlug: "_platform", isSuperAdmin: true, exp }), is(401));
 

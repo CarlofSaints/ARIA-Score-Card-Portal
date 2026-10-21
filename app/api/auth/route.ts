@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
           role: user.role,
           tenantSlug: slug,
           forcePasswordChange: user.forcePasswordChange,
+          passwordChangedAt: user.passwordChangedAt,
           exp: sessionExp(SESSION_TTL),
         };
 

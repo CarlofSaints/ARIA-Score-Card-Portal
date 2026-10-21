@@ -3,7 +3,7 @@ import { getTenantSlug } from "@/lib/getTenantSlug";
 import { getTenantConfig } from "@/lib/getTenantConfig";
 import { getUserByEmail } from "@/lib/userData";
 import { createResetToken } from "@/lib/passwordReset";
-import { sendPasswordResetEmail } from "@/lib/email";
+import { sendPasswordResetEmail, getTenantUrl } from "@/lib/email";
 import { noCacheHeaders } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -32,15 +32,7 @@ export async function POST(req: NextRequest) {
     const tenantName = config?.name || "ARIA Score Card";
 
     // Build reset URL from configured values only, never the request's Host.
-    const domain = config?.domains?.[0];
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (domain ? `https://${domain}` : "");
-    if (!siteUrl) {
-      console.error(`Forgot password: no NEXT_PUBLIC_SITE_URL or domain configured for tenant ${slug}`);
-      return Response.json(
-        { error: "Internal server error" },
-        { status: 500, headers: noCacheHeaders() }
-      );
-    }
+    const siteUrl = getTenantUrl(slug, config?.domains);
     const resetUrl = `${siteUrl}/reset-password?token=${token}`;
 
     await sendPasswordResetEmail({

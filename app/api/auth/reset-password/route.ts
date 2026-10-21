@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { validateResetToken, markTokenUsed } from "@/lib/passwordReset";
 import { getUserByEmail, setUserPassword } from "@/lib/userData";
 import { noCacheHeaders } from "@/lib/auth";
+import { MIN_PASSWORD_LENGTH } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (password.length < 8) {
+    if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
       return Response.json(
         { error: "Password must be at least 8 characters" },
         { status: 400, headers: noCacheHeaders() }

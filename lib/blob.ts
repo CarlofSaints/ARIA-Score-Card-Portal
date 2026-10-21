@@ -10,15 +10,14 @@ const token = () => {
   return t;
 };
 
+// The fallback is ONLY for a file that does not exist yet. Any other failure
+// (no token, network, bad JSON) throws, so a read-modify-write can never save a
+// near-empty copy over the real data.
 export async function readJson<T>(key: string, fallback: T): Promise<T> {
-  try {
-    const result = await get(key, { access: "private", useCache: false, token: token() });
-    if (!result || result.statusCode !== 200) return fallback;
-    const text = await new Response(result.stream).text();
-    return JSON.parse(text) as T;
-  } catch {
-    return fallback;
-  }
+  const result = await get(key, { access: "private", useCache: false, token: token() });
+  if (!result) return fallback;
+  if (result.statusCode !== 200) throw new Error(`Unexpected status ${result.statusCode} reading ${key}`);
+  return JSON.parse(await new Response(result.stream).text()) as T;
 }
 
 export async function writeJson<T>(key: string, data: T): Promise<void> {

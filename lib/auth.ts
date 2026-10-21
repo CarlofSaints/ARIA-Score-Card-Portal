@@ -4,7 +4,7 @@ import type { SessionPayload, UserRole, PermissionKey } from "./types";
 import { getRolePermissions } from "./roleData";
 import { hasPermission } from "./roles";
 import { getTenantSlug } from "./getTenantSlug";
-import { getUserById } from "./userData";
+import { getUsers } from "./userData";
 import { readJson } from "./blob";
 import type { SuperAdmin } from "./types";
 
@@ -75,6 +75,22 @@ export function getSession(req: NextRequest): SessionPayload | null {
   return decodeSession(cookie);
 }
 
+// Per-request memo, keyed on the request object so nothing is shared between
+// requests: several auth checks in one handler read each file once. A failed
+// store read becomes a 503, never a 401, so the client keeps its session.
+const perRequest = new WeakMap<NextRequest, Map<string, Promise<unknown>>>();
+function once<T>(req: NextRequest, key: string, load: () => Promise<T>): Promise<T> {
+  let m = perRequest.get(req);
+  if (!m) perRequest.set(req, (m = new Map()));
+  if (!m.has(key)) {
+    m.set(key, load().catch((err) => {
+      console.error(err);
+      throw new AuthError("Temporarily unavailable, please try again", 503);
+    }));
+  }
+  return m.get(key) as Promise<T>;
+}
+
 /**
  * Valid session for THIS request's tenant. Non-super-admin sessions must belong
  * to the host's tenant, and the user is re-read so deleted/deactivated users are
@@ -87,7 +103,9 @@ export async function requireLogin(req: NextRequest): Promise<SessionPayload> {
   }
 
   if (session.isSuperAdmin) {
-    const admins = await readJson<SuperAdmin[]>("_platform/super-admins.json", []);
+    const admins = await once(req, "super-admins", () =>
+      readJson<SuperAdmin[]>("_platform/super-admins.json", [])
+    );
     if (!admins.some((a) => a.id === session.userId)) {
       throw new AuthError("Not authenticated", 401);
     }
@@ -104,8 +122,10 @@ export async function requireLogin(req: NextRequest): Promise<SessionPayload> {
     throw new AuthError("Forbidden", 403);
   }
 
-  const user = await getUserById(session.tenantSlug, session.userId);
-  if (!user || !user.active) {
+  const users = await once(req, `users:${session.tenantSlug}`, () => getUsers(session.tenantSlug));
+  const user = users.find((u) => u.id === session.userId);
+  // A password change/reset since this cookie was issued signs it out.
+  if (!user || !user.active || (user.passwordChangedAt ?? "") !== (session.passwordChangedAt ?? "")) {
     throw new AuthError("Not authenticated", 401);
   }
   return {
@@ -142,7 +162,9 @@ export async function requirePermission(
   const session = await requireLogin(req);
   if (session.role === "super_admin") return session;
 
-  const rolePerms = await getRolePermissions(session.tenantSlug);
+  const rolePerms = await once(req, `role-perms:${session.tenantSlug}`, () =>
+    getRolePermissions(session.tenantSlug)
+  );
   if (!hasPermission(rolePerms, session.role, perm)) {
     throw new AuthError("Insufficient permissions", 403);
   }

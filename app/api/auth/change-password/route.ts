@@ -9,13 +9,14 @@ import {
   SESSION_TTL,
 } from "@/lib/auth";
 import { getUserById, verifyPassword, setUserPassword } from "@/lib/userData";
+import { MIN_PASSWORD_LENGTH } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
     const session = await requireLogin(req);
     const { currentPassword, newPassword } = await req.json();
 
-    if (typeof newPassword !== "string" || newPassword.length < 8) {
+    if (typeof newPassword !== "string" || newPassword.length < MIN_PASSWORD_LENGTH) {
       return Response.json(
         { error: "New password must be at least 8 characters" },
         { status: 400, headers: noCacheHeaders() }
@@ -47,9 +48,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await setUserPassword(session.tenantSlug, session.userId, newPassword);
+    const passwordChangedAt = await setUserPassword(session.tenantSlug, session.userId, newPassword);
 
-    // Reissue the cookie so it no longer carries forcePasswordChange.
+    // Reissue the cookie: no forcePasswordChange, and the new passwordChangedAt
+    // so this session survives while every other one is signed out.
     const res = NextResponse.json(
       { success: true, message: "Password changed successfully" },
       { headers: noCacheHeaders() }
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
     const cookieOpts = sessionCookieOptions();
     res.cookies.set(
       cookieOpts.name,
-      encodeSession({ ...session, forcePasswordChange: false, exp: sessionExp(SESSION_TTL) }),
+      encodeSession({ ...session, forcePasswordChange: false, passwordChangedAt, exp: sessionExp(SESSION_TTL) }),
       cookieOpts
     );
     return res;

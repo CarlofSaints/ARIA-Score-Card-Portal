@@ -13,7 +13,7 @@ import {
   deleteUser,
   setUserPassword,
 } from "@/lib/userData";
-import type { User, UserRole } from "@/lib/types";
+import { MIN_PASSWORD_LENGTH, type User, type UserRole } from "@/lib/types";
 
 // Roles a tenant user-manager may assign. "super_admin" is a PLATFORM role and
 // must never be settable through this tenant endpoint (privilege escalation).
@@ -49,6 +49,12 @@ export async function POST(req: NextRequest) {
     if (!TENANT_ROLES.includes(role)) {
       return Response.json(
         { error: "Invalid role" },
+        { status: 400, headers: noCacheHeaders() }
+      );
+    }
+    if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
+      return Response.json(
+        { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
         { status: 400, headers: noCacheHeaders() }
       );
     }
@@ -98,6 +104,12 @@ export async function PUT(req: NextRequest) {
     // only accepts profile fields). setUserPassword also clears forcePasswordChange,
     // so re-apply the flag afterwards if the caller asked to force a change.
     if (typeof password === "string" && password.length > 0) {
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        return Response.json(
+          { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
+          { status: 400, headers: noCacheHeaders() }
+        );
+      }
       await setUserPassword(slug, id, password);
     }
 

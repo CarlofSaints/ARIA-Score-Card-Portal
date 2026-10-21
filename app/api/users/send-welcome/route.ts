@@ -3,13 +3,13 @@ import { requirePermission, handleAuthError, noCacheHeaders } from "@/lib/auth";
 import { getTenantSlug } from "@/lib/getTenantSlug";
 import { getTenantConfig } from "@/lib/getTenantConfig";
 import { sendWelcomeEmail } from "@/lib/email";
-import { getUserById, getUserByEmail } from "@/lib/userData";
+import { getUserById, getUserByEmail, verifyPassword } from "@/lib/userData";
 
 export async function POST(req: NextRequest) {
   try {
     await requirePermission(req, "manage_users");
     const slug = await getTenantSlug();
-    const { userId, email, password, forcePasswordChange } = await req.json();
+    const { userId, email, password } = await req.json();
 
     // Only ever email an existing user of THIS tenant; name/address come from the store.
     const user =
@@ -19,6 +19,13 @@ export async function POST(req: NextRequest) {
       return Response.json(
         { error: "User not found" },
         { status: 404, headers: noCacheHeaders() }
+      );
+    }
+    // Only the password that was just set for this user may be emailed.
+    if (typeof password !== "string" || !(await verifyPassword(user, password))) {
+      return Response.json(
+        { error: "Password does not match this user's current password" },
+        { status: 400, headers: noCacheHeaders() }
       );
     }
 
@@ -33,7 +40,7 @@ export async function POST(req: NextRequest) {
       tenantDomains: config?.domains,
       email: user.email,
       password,
-      forcePasswordChange: forcePasswordChange ?? false,
+      forcePasswordChange: user.forcePasswordChange,
       branding: config?.branding,
       enabledModules: config?.enabledModules,
     });

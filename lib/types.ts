@@ -160,6 +160,7 @@ export interface User {
   active: boolean;
   createdAt: string; // ISO
   lastLoginAt?: string; // ISO
+  passwordChangedAt?: string; // ISO; sessions issued before it are rejected
 }
 
 export interface SuperAdmin {
@@ -178,8 +179,11 @@ export interface SessionPayload {
   tenantSlug: string;
   forcePasswordChange?: boolean;
   isSuperAdmin?: boolean;
+  passwordChangedAt?: string; // copied from the user at sign-in; must still match
   exp: number; // epoch seconds; checked server-side in decodeSession
 }
+
+export const MIN_PASSWORD_LENGTH = 8;
 
 // ── Password Reset ──
 

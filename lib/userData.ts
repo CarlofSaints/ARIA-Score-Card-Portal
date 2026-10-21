@@ -77,14 +77,18 @@ export async function setUserPassword(
   tenantSlug: string,
   userId: string,
   newPassword: string
-): Promise<void> {
+): Promise<string> {
   const users = await getUsers(tenantSlug);
   const idx = users.findIndex((u) => u.id === userId);
   if (idx === -1) throw new Error("User not found");
 
   users[idx].password = await bcrypt.hash(newPassword, 10);
   users[idx].forcePasswordChange = false;
+  // Bumping this signs out every existing session of the user (see requireLogin).
+  const changedAt = new Date().toISOString();
+  users[idx].passwordChangedAt = changedAt;
   await writeJson(usersKey(tenantSlug), users);
+  return changedAt;
 }
 
 export async function deleteUser(

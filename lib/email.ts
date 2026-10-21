@@ -22,6 +22,15 @@ function esc(v: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
+// Links/images in emails must be https; anything else is left out.
+function httpsOnly(url?: string): string {
+  try {
+    return url && new URL(url).protocol === "https:" ? url : "";
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Build the tenant's portal URL.
  * Priority: 1) explicit custom domain, 2) slug.ariascorecard.co.za, 3) NEXT_PUBLIC_SITE_URL fallback
@@ -51,8 +60,8 @@ export async function sendWelcomeEmail(params: {
   const resend = getResend();
   const primary = esc(params.branding?.primaryColor || "#3D6273");
   const accent = esc(params.branding?.accentColor || "#E04E2A");
-  const clientLogo = params.branding?.logoUrl ? esc(params.branding.logoUrl) : "";
-  const siteUrl = getTenantUrl(params.tenantSlug, params.tenantDomains);
+  const clientLogo = esc(httpsOnly(params.branding?.logoUrl));
+  const siteUrl = httpsOnly(getTenantUrl(params.tenantSlug, params.tenantDomains));
   const loginUrl = siteUrl ? esc(`${siteUrl}/login`) : "";
 
   // Build module list
