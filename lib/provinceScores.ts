@@ -22,6 +22,24 @@ export function provinceName(raw: string | undefined): string {
   return PROVINCES[s.toLowerCase().replace(/\s+/g, " ")] ?? s;
 }
 
+/** A store's country as listed in the Control Centre; blank → "Unknown". */
+export function countryName(store: ScorecardStore): string {
+  return store.country?.trim() || "Unknown";
+}
+
+/**
+ * Is a store inside the admin's Control Centre country/province lists? An unset
+ * or empty list lets everything through.
+ */
+export function storeShown(
+  store: ScorecardStore,
+  cfg: { includedCountries?: string[]; includedProvinces?: string[] } | null | undefined
+): boolean {
+  const c = cfg?.includedCountries;
+  const p = cfg?.includedProvinces;
+  return (!c?.length || c.includes(countryName(store))) && (!p?.length || p.includes(provinceName(store.region)));
+}
+
 export interface ProvinceGroup {
   id: string; // province, or "channel|province"
   name: string;

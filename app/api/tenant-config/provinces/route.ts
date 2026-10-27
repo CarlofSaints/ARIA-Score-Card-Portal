@@ -4,23 +4,40 @@ import { getTenantSlug } from "@/lib/getTenantSlug";
 import { getTenantConfig } from "@/lib/getTenantConfig";
 import { updateTenant } from "@/lib/tenantConfig";
 import { readJson } from "@/lib/blob";
-import { provinceName } from "@/lib/provinceScores";
+import { countryName, provinceName } from "@/lib/provinceScores";
 import type { ScorecardStore } from "@/lib/types";
 
-// Which provinces the Province Score Card shows. The store master has no
-// country, so the admin ticks the SA provinces here. null = all shown.
-async function allProvinces(slug: string): Promise<string[]> {
+// Which countries and provinces the Province and Store Score Cards show (picked
+// in Control Centre). Each list: null = all shown.
+async function lists(slug: string) {
   const stores = await readJson<ScorecardStore[]>(`${slug}/data/stores.json`, []);
-  return Array.from(new Set(stores.map((s) => provinceName(s.region)))).sort();
+  return {
+    countries: Array.from(new Set(stores.map(countryName))).sort(),
+    provinces: Array.from(new Set(stores.map((s) => provinceName(s.region)))).sort(),
+  };
+}
+
+// Keep known names only; an empty list means "show all" (stored as unset).
+function pick(value: unknown, known: string[], label: string): string[] | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new AuthError(`Invalid ${label} list`, 400);
+  const ok = new Set(known);
+  const out = Array.from(new Set(value.filter((v): v is string => typeof v === "string" && ok.has(v))));
+  return out.length ? out : undefined;
 }
 
 export async function GET(req: NextRequest) {
   try {
     await requireRole(req, "admin");
     const slug = await getTenantSlug();
-    const [config, all] = await Promise.all([getTenantConfig(slug), allProvinces(slug)]);
+    const [config, all] = await Promise.all([getTenantConfig(slug), lists(slug)]);
     return Response.json(
-      { all, included: config?.includedProvinces ?? null },
+      {
+        all: all.provinces,
+        included: config?.includedProvinces ?? null,
+        countries: all.countries,
+        includedCountries: config?.includedCountries ?? null,
+      },
       { headers: noCacheHeaders() }
     );
   } catch (err) {
@@ -33,14 +50,14 @@ export async function PUT(req: NextRequest) {
     await requireRole(req, "admin");
     const slug = await getTenantSlug();
     const body = await req.json();
-    const all = new Set(await allProvinces(slug));
-    // Keep known names only; an empty list means "show all" (null).
-    if (body.included !== null && !Array.isArray(body.included)) throw new AuthError("Invalid province list", 400);
-    const picked: string[] = Array.isArray(body.included)
-      ? Array.from(new Set(body.included.filter((p: unknown): p is string => typeof p === "string" && all.has(p))))
-      : [];
-    await updateTenant(slug, { includedProvinces: picked.length ? picked : undefined });
-    return Response.json({ included: picked.length ? picked : null }, { headers: noCacheHeaders() });
+    const all = await lists(slug);
+    const includedProvinces = pick(body.included, all.provinces, "province");
+    const includedCountries = pick(body.includedCountries, all.countries, "country");
+    await updateTenant(slug, { includedProvinces, includedCountries });
+    return Response.json(
+      { included: includedProvinces ?? null, includedCountries: includedCountries ?? null },
+      { headers: noCacheHeaders() }
+    );
   } catch (err) {
     return handleAuthError(err);
   }
