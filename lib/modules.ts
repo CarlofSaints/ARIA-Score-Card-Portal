@@ -3,10 +3,10 @@ import type { ModuleDef, ModuleKey, KpiDef, KpiKey, KpiScoringConfig } from "./t
 export const MODULE_DEFS: ModuleDef[] = [
   {
     key: "cam_scorecard",
-    label: "CAM Score Card",
+    label: "KAM Score Card",
     route: "/cam-scorecard",
     icon: "Users",
-    description: "Scores CAMs across their assigned channels and brands",
+    description: "Scores KAMs across their assigned channels and brands",
   },
   {
     key: "channel_scorecard",

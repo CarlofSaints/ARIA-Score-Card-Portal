@@ -85,7 +85,7 @@ export interface KpiWeighting {
 // ── KPI scoring (how a KPI's % maps to points) ──
 // The KPI weight is the points pool for that KPI. Brackets define how the
 // metric % converts to points (0..weight). One config per KPI, applied to every
-// scorecard level (channel/store/product/CAM).
+// scorecard level (channel/store/product/KAM).
 
 // Sales is the only KPI scored on a period-over-period growth metric; the other
 // three are point-in-time levels. "tm_vs_lm" needs last-month data that
@@ -196,13 +196,13 @@ export interface PasswordResetToken {
   used: boolean;
 }
 
-// ── CAM Mapping ──
+// ── KAM Mapping ──
 
 export interface CamMapping {
   id: string;
   camUserId: string; // references a User (role "cam")
   camName: string; // denormalised from the user for display
-  camEmail?: string; // deprecated — CAM is now chosen from the user list
+  camEmail?: string; // deprecated — KAM is now chosen from the user list
   channelIds: string[];
   brandIds: string[];
 }

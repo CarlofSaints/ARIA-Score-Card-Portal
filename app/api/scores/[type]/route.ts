@@ -79,7 +79,7 @@ export async function GET(
       return salesGrowthPercent(sd, "ytd_vs_ytd");
     };
 
-    // KPI percentage blobs are stored per level. CAM derives from channel data.
+    // KPI percentage blobs are stored per level. KAM derives from channel data.
     const lvl = type === "cam" ? "channel" : type;
     type CoverSet = { channels: string[]; stores: string[]; products: string[] };
     type Coverage = { sales?: CoverSet; nd?: CoverSet; oos?: CoverSet; phantom?: CoverSet };
@@ -91,7 +91,7 @@ export async function GET(
     ]);
 
     // Per-KPI coverage. Different channels carry different KPIs (PnP has all
-    // four; SPAR has only Sales + ND). CAM gates on channel coverage. If no
+    // four; SPAR has only Sales + ND). KAM gates on channel coverage. If no
     // per-KPI coverage is recorded yet (pre-resync), treat everything as present
     // so behaviour is unchanged until the next sync writes the new coverage.
     const entityField: keyof CoverSet =
@@ -196,7 +196,7 @@ export async function GET(
         return score;
       });
     } else {
-      // CAM = average of the assigned channels' metrics.
+      // KAM = average of the assigned channels' metrics.
       const mappings = await readJson<CamMapping[]>(`${slug}/cam-mappings.json`, []);
       const sales = await readJson<SalesData[]>(
         `${slug}/data/sales/${period}/channels.json`,
@@ -210,8 +210,8 @@ export async function GET(
       };
 
       scores = mappings.map((m) => {
-        // Per KPI, average only over the CAM's channels that have THAT KPI's
-        // data. So a CAM over PnP+SPAR gets OOS from PnP only, while Sales/ND
+        // Per KPI, average only over the KAM's channels that have THAT KPI's
+        // data. So a KAM over PnP+SPAR gets OOS from PnP only, while Sales/ND
         // average both. Empty channels never dilute (the Jaryd fix), and a KPI
         // no mapped channel has becomes "—" (its points redistribute).
         const chFor = (kpi: KpiKey) =>

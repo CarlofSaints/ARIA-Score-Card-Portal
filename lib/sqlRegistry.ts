@@ -70,7 +70,7 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     database: DB,
     params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
     sql: "EXEC GetClientRetailChannels @client = @client",
-    usedBy: "Sync → channels.json; Channel & CAM scorecards",
+    usedBy: "Sync → channels.json; Channel & KAM scorecards",
   },
   {
     name: "client_stores",
@@ -120,13 +120,13 @@ export const SQL_REGISTRY: SqlRegistryEntry[] = [
     category: "Core master data",
     kind: "query",
     status: "live",
-    purpose: "Distinct active brands for a client — feeds CAM-mapping brand multiselect.",
+    purpose: "Distinct active brands for a client — feeds KAM-mapping brand multiselect.",
     server: POOL1,
     database: DB,
     params: [{ name: "client", description: "Client name, e.g. HENKEL" }],
     sql:
       "SELECT DISTINCT [Product Brand] AS Brand\nFROM tblProducts\nWHERE Client = @client AND [Product Status] = 'ACTIVE' AND [Product Brand] IS NOT NULL\nORDER BY [Product Brand]",
-    usedBy: "Sync → brands.json; CAM Mapping",
+    usedBy: "Sync → brands.json; KAM Mapping",
   },
 
   // ── Sales ──────────────────────────────────────────────────────────
