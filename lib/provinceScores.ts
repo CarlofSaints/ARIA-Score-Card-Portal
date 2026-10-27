@@ -2,7 +2,9 @@ import type { KpiKey, NdDetailRow, SalesData, SalesGrowthMetric, ScorecardStore 
 import { salesGrowthPercent } from "./scoreEngine";
 
 const PROVINCES: Record<string, string> = {
-  gauteng: "Gauteng", gp: "Gauteng", gt: "Gauteng", gau: "Gauteng",
+  gauteng: "Gauteng", gp: "Gauteng", gt: "Gauteng", gau: "Gauteng", tshwane: "Gauteng",
+  // Spellings seen in the store master (27 Oct).
+  "westen cape": "Western Cape", polokwae: "Limpopo", polokwane: "Limpopo",
   "western cape": "Western Cape", wc: "Western Cape",
   "eastern cape": "Eastern Cape", ec: "Eastern Cape",
   "northern cape": "Northern Cape", nc: "Northern Cape",
@@ -16,7 +18,7 @@ const PROVINCES: Record<string, string> = {
 /** One spelling per province ("GP", "gauteng " → "Gauteng"); blank → "Unknown". */
 export function provinceName(raw: string | undefined): string {
   const s = (raw ?? "").trim();
-  if (!s) return "Unknown";
+  if (!s || /^n\/?a$/i.test(s)) return "Unknown";
   return PROVINCES[s.toLowerCase().replace(/\s+/g, " ")] ?? s;
 }
 
