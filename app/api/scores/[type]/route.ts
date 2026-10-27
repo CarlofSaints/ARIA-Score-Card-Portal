@@ -5,7 +5,7 @@ import { readJson } from "@/lib/blob";
 import { getKpiWeightings } from "@/lib/kpiData";
 import { getKpiScoring } from "@/lib/scoringData";
 import { buildEntityScore, pointsForValue, rankScores, salesGrowthPercent } from "@/lib/scoreEngine";
-import { nextPeriod, scoreSalesTargets } from "@/lib/salesTargets";
+import { scoreSalesTargets, type SalesHistory } from "@/lib/salesTargets";
 import type {
   ScorecardChannel,
   ScorecardStore,
@@ -116,6 +116,27 @@ export async function GET(
     const at = (rec: Record<string, number>, id: string): number | null =>
       id in rec ? rec[id] : null;
 
+    // "Set Rand Value Target" scoring for Sales at one level, or null when that
+    // level scores growth. Channel ids = channel names.
+    const salesCfg = scoring.find((s) => s.key === "sales_growth");
+    const salesTargetsFor = async (
+      level: "channel" | "store" | "product",
+      ids: string[],
+      ytd?: Map<string, number>,
+      stores?: ScorecardStore[]
+    ) => {
+      if (metric !== "rand_target" || !salesCfg) return null;
+      if (level !== "channel" && salesCfg.targetCascade !== "target") return null;
+      const [history, channels] = await Promise.all([
+        readJson<SalesHistory>(`${slug}/data/sales/monthly-history.json`, {}),
+        level === "product" ? readJson<ScorecardChannel[]>(`${slug}/data/channels.json`, []) : Promise.resolve([]),
+      ]);
+      return scoreSalesTargets({
+        cfg: salesCfg, level, period, history, ids, ytd, stores,
+        channelIds: channels.map((c) => c.id),
+      });
+    };
+
     let scores: EntityScore[] = [];
 
     if (type === "channel" || type === "store" || type === "product") {
@@ -131,30 +152,12 @@ export async function GET(
       const salesById = new Map(sales.map((s) => [s.entityId, s]));
 
       // Sales vs Rand target (null = this level scores growth as before).
-      const salesCfg = scoring.find((s) => s.key === "sales_growth");
-      const usesTargets =
-        metric === "rand_target" && (type === "channel" || salesCfg?.targetCascade === "target");
-      const [nextSales, channelSales] = usesTargets
-        ? await Promise.all([
-            readJson<SalesData[]>(`${slug}/data/sales/${nextPeriod(period)}/${entityFile}.json`, []),
-            type === "product"
-              ? readJson<SalesData[]>(`${slug}/data/sales/${period}/channels.json`, [])
-              : Promise.resolve([] as SalesData[]),
-          ])
-        : [[], []];
-      const targetScores =
-        usesTargets && salesCfg
-          ? scoreSalesTargets({
-              cfg: salesCfg,
-              level: type,
-              period,
-              now: new Date(),
-              sales,
-              nextSales,
-              stores: type === "store" ? (entities as ScorecardStore[]) : undefined,
-              channelSales,
-            })
-          : null;
+      const targetScores = await salesTargetsFor(
+        type,
+        entities.map((e) => e.id),
+        new Map(sales.map((s) => [s.entityId, s.salesValue || 0])),
+        type === "store" ? (entities as ScorecardStore[]) : undefined
+      );
 
       // A KAM owns channels (channel/store grain) and brands (product grain).
       const belongs = (e: ScorecardChannel | ScorecardStore | ScorecardProduct): boolean => {
@@ -241,18 +244,10 @@ export async function GET(
 
       // Target mode: each channel scores on its own target + points table; the
       // KAM gets the average of those channel points (and of the % achieved).
-      const salesCfg = scoring.find((s) => s.key === "sales_growth");
-      const channelTargets =
-        metric === "rand_target" && salesCfg
-          ? scoreSalesTargets({
-              cfg: salesCfg,
-              level: "channel",
-              period,
-              now: new Date(),
-              sales,
-              nextSales: await readJson<SalesData[]>(`${slug}/data/sales/${nextPeriod(period)}/channels.json`, []),
-            })
-          : null;
+      const channelTargets = await salesTargetsFor(
+        "channel",
+        Array.from(new Set(mappings.flatMap((m) => m.channelIds)))
+      );
       const salesWeight = weightings.find((w) => w.key === "sales_growth")?.weight ?? 0;
 
       scores = mappings.map((m) => {

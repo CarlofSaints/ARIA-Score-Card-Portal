@@ -21,7 +21,8 @@ function rand(v: number): string {
   return "R " + v.toLocaleString("en-ZA", { maximumFractionDigits: 0 });
 }
 
-function BracketEditor({ brackets, onChange }: { brackets: ScoreBracket[]; onChange: (b: ScoreBracket[]) => void }) {
+// Points table editor shared with the other KPIs: rows of "min to max <unit> → points".
+export function BracketEditor({ brackets, onChange, unit = "% of target" }: { brackets: ScoreBracket[]; onChange: (b: ScoreBracket[]) => void; unit?: string }) {
   const set = (i: number, field: keyof ScoreBracket, v: number) =>
     onChange(brackets.map((b, j) => (j === i ? { ...b, [field]: v } : b)));
   const add = () => {
@@ -33,12 +34,12 @@ function BracketEditor({ brackets, onChange }: { brackets: ScoreBracket[]; onCha
       <div className="space-y-1.5">
         {brackets.map((b, i) => (
           <div key={i} className="flex items-center gap-1.5 text-xs">
-            <input type="number" value={b.min} onChange={(e) => set(i, "min", Number(e.target.value))} aria-label="From % of target"
+            <input type="number" value={b.min} onChange={(e) => set(i, "min", Number(e.target.value))} aria-label={`From ${unit}`}
               className="w-16 px-1.5 py-1 rounded border border-[var(--color-border)] bg-white text-right" />
             <span className="text-[var(--color-text-muted)]">to</span>
-            <input type="number" value={b.max} onChange={(e) => set(i, "max", Number(e.target.value))} aria-label="To % of target"
+            <input type="number" value={b.max} onChange={(e) => set(i, "max", Number(e.target.value))} aria-label={`To ${unit}`}
               className="w-16 px-1.5 py-1 rounded border border-[var(--color-border)] bg-white text-right" />
-            <span className="text-[var(--color-text-muted)]">% of target →</span>
+            <span className="text-[var(--color-text-muted)]">{unit} →</span>
             <input type="number" value={b.points} onChange={(e) => set(i, "points", Number(e.target.value))} aria-label="Points"
               className="w-16 px-1.5 py-1 rounded border border-[var(--color-border)] bg-white text-right" />
             <span className="text-[var(--color-text-muted)]">pts</span>

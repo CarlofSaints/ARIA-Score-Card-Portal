@@ -121,19 +121,6 @@ export function salesGrowthPercent(
   return pct(sd.salesValue, sd.previousPeriodSalesValue);
 }
 
-/**
- * Share of a month's target that should have been reached by now: 1 for a past
- * month, days-so-far / days-in-month for the current one (pro-rated target).
- * shortcut: assumes sales data runs to yesterday; read the sync's as-of date if
- * that ever proves wrong.
- */
-export function targetFraction(period: string, now: Date): number {
-  const [y, m] = period.split("-").map(Number);
-  if (y !== now.getFullYear() || m !== now.getMonth() + 1) return 1;
-  const days = new Date(y, m, 0).getDate();
-  return Math.max(1, now.getDate() - 1) / days;
-}
-
 /** % of target achieved (100 = on target), or null when there is no target. */
 export function targetAchievement(actual: number | undefined, target: number | null | undefined, fraction: number): number | null {
   if (!target || target <= 0) return null;
