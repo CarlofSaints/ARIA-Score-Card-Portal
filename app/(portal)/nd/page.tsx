@@ -7,6 +7,7 @@ import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { NdDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
+import { LevelSelect } from "@/components/RollUpTable";
 
 type Level = NdDetailRow["level"];
 type SortKey = "name" | "channelName" | "subChannel" | "brand" | "ndPercent" | "rangedCount" | "totalCount";
@@ -70,7 +71,9 @@ export default function NdPage() {
       .finally(() => setFetching(false));
   }, [user]);
 
-  const baseRows = useMemo(() => rows.filter((r) => r.level === level), [rows, level]);
+  // Nothing ranged = no ND% to show (sync writes 0%), so leave those rows out
+  // rather than list them as 0% and drag the average down.
+  const baseRows = useMemo(() => rows.filter((r) => r.level === level && r.totalCount > 0), [rows, level]);
   const cols = useMemo(() => COLS.filter((c) => LEVEL_COLS[level].includes(c.key)), [level]);
 
   const channels = useMemo(
@@ -95,8 +98,11 @@ export default function NdPage() {
     });
   }, [baseRows, search, channel, brand, matches]);
 
+  // A sort column hidden by the current grain falls back to ND %.
+  const activeSort: SortKey = LEVEL_COLS[level].includes(sortKey) ? sortKey : "ndPercent";
   const sortRows = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
+    const sortKey = activeSort;
     return (arr: NdDetailRow[]) =>
       [...arr].sort((a, b) => {
         if (sortKey === "name") return entityName(a).localeCompare(entityName(b)) * dir;
@@ -105,7 +111,7 @@ export default function NdPage() {
         if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
         return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
       });
-  }, [sortKey, sortDir]);
+  }, [activeSort, sortDir]);
 
   // DC store rows are split into their own grid below the main one.
   const mainRows = useMemo(
@@ -153,23 +159,20 @@ export default function NdPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
-        <select value={level} onChange={(e) => setLevel(e.target.value as Level)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
-          <option value="channel">Channel</option>
-          <option value="store">Store</option>
-          <option value="product">Product</option>
-        </select>
+        <LevelSelect value={level} onChange={(l) => setLevel(l as Level)} detail={false} />
         <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All KAMs</option>
           {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
         </select>
-        <select value={channel} onChange={(e) => setChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+        {/* Product ND is national (no channel), store/channel ND has no brand: show only the filter that applies. */}
+        {level !== "product" && <select value={channel} onChange={(e) => setChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All channels</option>
           {channels.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={brand} onChange={(e) => setBrand(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+        </select>}
+        {level === "product" && <select value={brand} onChange={(e) => setBrand(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All brands</option>
           {brands.map((b) => <option key={b} value={b}>{b}</option>)}
-        </select>
+        </select>}
       </div>
 
       {fetching ? (
@@ -182,11 +185,11 @@ export default function NdPage() {
         </div>
       ) : (
         <>
-          <Grid rows={mainRows} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+          <Grid rows={mainRows} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
           {dcRows.length > 0 && (
             <div className="mt-8">
               <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">Distribution Centres (DC)</h2>
-              <Grid rows={dcRows} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+              <Grid rows={dcRows} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
             </div>
           )}
         </>

@@ -211,7 +211,7 @@ export default function PhantomStorePage() {
           </p>
         </div>
       ) : level !== "detail" ? (
-        <RollUpTable rows={filtered} level={level} itemLabel="Phantom items" />
+        <RollUpTable rows={filtered} level={level} itemLabel="Phantom items" showSoh />
       ) : (
         <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
           <div className="overflow-x-auto max-h-[70vh]">

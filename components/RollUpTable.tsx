@@ -15,6 +15,7 @@ export interface RollRow {
   productId: string;
   productName: string;
   brand: string;
+  soh?: number; // Phantom only: summed per group
 }
 
 interface Agg {
@@ -28,9 +29,10 @@ interface Agg {
   items: number;
   stores: number;
   products: number;
+  soh: number;
 }
 
-type ColKey = "channelName" | "storeName" | "subChannel" | "productName" | "brand" | "items" | "stores" | "products";
+type ColKey = "channelName" | "storeName" | "subChannel" | "productName" | "brand" | "items" | "soh" | "stores" | "products";
 
 const NAME_COLS: Record<Exclude<RollLevel, "detail">, ColKey[]> = {
   channel: ["channelName", "items", "stores", "products"],
@@ -38,9 +40,9 @@ const NAME_COLS: Record<Exclude<RollLevel, "detail">, ColKey[]> = {
   product: ["productName", "brand", "items", "stores"],
 };
 const WIDTH: Record<ColKey, number> = {
-  channelName: 160, storeName: 260, subChannel: 140, productName: 320, brand: 160, items: 110, stores: 130, products: 140,
+  channelName: 160, storeName: 260, subChannel: 140, productName: 320, brand: 160, items: 110, soh: 110, stores: 130, products: 140,
 };
-const NUM = new Set<ColKey>(["items", "stores", "products"]);
+const NUM = new Set<ColKey>(["items", "soh", "stores", "products"]);
 
 export function rollUp(rows: RollRow[], level: Exclude<RollLevel, "detail">): Agg[] {
   const groups = new Map<string, { agg: Agg; stores: Set<string>; products: Set<string> }>();
@@ -51,7 +53,7 @@ export function rollUp(rows: RollRow[], level: Exclude<RollLevel, "detail">): Ag
       g = {
         agg: {
           key, channelName: r.channelName, storeName: r.storeName, siteCode: r.siteCode,
-          subChannel: r.subChannel, productName: r.productName, brand: r.brand, items: 0, stores: 0, products: 0,
+          subChannel: r.subChannel, productName: r.productName, brand: r.brand, items: 0, stores: 0, products: 0, soh: 0,
         },
         stores: new Set(),
         products: new Set(),
@@ -59,45 +61,52 @@ export function rollUp(rows: RollRow[], level: Exclude<RollLevel, "detail">): Ag
       groups.set(key, g);
     }
     g.agg.items++;
+    g.agg.soh += r.soh ?? 0;
     g.stores.add(r.siteCode);
     g.products.add(r.productId);
   }
   return [...groups.values()].map((g) => ({ ...g.agg, stores: g.stores.size, products: g.products.size }));
 }
 
-export function LevelSelect({ value, onChange }: { value: RollLevel; onChange: (l: RollLevel) => void }) {
+export function LevelSelect({ value, onChange, detail = true }: { value: RollLevel; onChange: (l: RollLevel) => void; detail?: boolean }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value as RollLevel)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
       <option value="channel">Channel</option>
       <option value="store">Store</option>
       <option value="product">Product</option>
-      <option value="detail">Detail (store × SKU)</option>
+      {detail && <option value="detail">Detail (store × SKU)</option>}
     </select>
   );
 }
 
-export default function RollUpTable({ rows, level, itemLabel }: { rows: RollRow[]; level: Exclude<RollLevel, "detail">; itemLabel: string }) {
+export default function RollUpTable({ rows, level, itemLabel, showSoh = false }: { rows: RollRow[]; level: Exclude<RollLevel, "detail">; itemLabel: string; showSoh?: boolean }) {
   const [sortKey, setSortKey] = useState<ColKey>("items");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const { widths, startResize, totalWidth } = useColumnWidths(WIDTH);
-  const cols = NAME_COLS[level];
+  const cols = useMemo(() => {
+    const c = NAME_COLS[level];
+    return showSoh ? [...c.slice(0, c.indexOf("items") + 1), "soh" as ColKey, ...c.slice(c.indexOf("items") + 1)] : c;
+  }, [level, showSoh]);
+  // A sort column hidden by the current grain falls back to the item count.
+  const activeSort: ColKey = cols.includes(sortKey) ? sortKey : "items";
 
+  const groups = useMemo(() => rollUp(rows, level), [rows, level]);
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
-    return rollUp(rows, level).sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
+    return [...groups].sort((a, b) => {
+      const av = a[activeSort];
+      const bv = b[activeSort];
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
     });
-  }, [rows, level, sortKey, sortDir]);
+  }, [groups, activeSort, sortDir]);
 
   const label = (c: ColKey) =>
-    ({ channelName: "Channel", storeName: "Store", subChannel: "Sub-Channel", productName: "Product", brand: "Brand", items: itemLabel, stores: "Stores affected", products: "Products affected" })[c];
+    ({ channelName: "Channel", storeName: "Store", subChannel: "Sub-Channel", productName: "Product", brand: "Brand", items: itemLabel, soh: "SOH", stores: "Stores affected", products: "Products affected" })[c];
 
   function toggleSort(key: string) {
     const k = key as ColKey;
-    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    if (activeSort === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(k); setSortDir(NUM.has(k) ? "desc" : "asc"); }
   }
 
@@ -112,7 +121,7 @@ export default function RollUpTable({ rows, level, itemLabel }: { rows: RollRow[
             <tr className="text-left text-[var(--color-text-muted)]">
               {cols.map((c) => (
                 <Th key={c} label={label(c)} colKey={c} align={NUM.has(c) ? "right" : undefined}
-                  sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} onResize={startResize(c)} />
+                  sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} onResize={startResize(c)} />
               ))}
             </tr>
           </thead>

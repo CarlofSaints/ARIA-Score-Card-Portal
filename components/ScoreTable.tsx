@@ -64,7 +64,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
 
   // KAM filter (server-side — EntityScore rows carry no channel/brand). Not shown
   // on the CAM scorecard, which is already per-KAM.
-  const { kams, kamId, setKamId } = useKamFilter();
+  const { kams, kamId, setKamId, selected: kam } = useKamFilter();
 
   // Channel filter (store scorecard only; server-side like the KAM filter).
   const [channel, setChannel] = useState("all");
@@ -76,6 +76,11 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
       .then((d) => setChannels(Array.isArray(d.channels) ? d.channels.map((c: { name: string }) => c.name).sort() : []))
       .catch(() => {});
   }, [type]);
+  // Only offer the selected KAM's channels (empty owned-list = all channels).
+  const channelOptions = useMemo(
+    () => (kam?.channels.length ? channels.filter((c) => kam.channels.includes(c)) : channels),
+    [channels, kam]
+  );
 
   const cols = useMemo(
     () => [
@@ -181,7 +186,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
           {type !== "cam" && (
             <select
               value={kamId}
-              onChange={(e) => setKamId(e.target.value)}
+              onChange={(e) => { setKamId(e.target.value); setChannel("all"); }}
               className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
             >
               <option value="all">All KAMs</option>
@@ -195,7 +200,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
               className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
             >
               <option value="all">All channels</option>
-              {channels.map((c) => <option key={c} value={c}>{c}</option>)}
+              {channelOptions.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           )}
           <label className="text-xs text-[var(--color-text-muted)]">Month</label>

@@ -147,6 +147,9 @@ export async function GET(
       // ND is row-driven off the ranging list, so an entity with no ranged SKUs
       // gets no ND% at all. Flag it "not ranged" only when ND did sync for it:
       // a store whose channel has other stores with ND, or any product once ND ran.
+      // DCs are never in the ranging pull, so they stay a plain "—".
+      const isDc = (e: ScorecardChannel | ScorecardStore | ScorecardProduct) =>
+        (e as ScorecardStore).subChannel?.toUpperCase().startsWith("DC") ?? false;
       const ndStoreChannels = new Set(
         type === "store"
           ? (entities as ScorecardStore[]).filter((s) => cov.numerical_distribution.has(s.id)).map((s) => s.channelName)
@@ -155,6 +158,7 @@ export async function GET(
       const ndNotRanged = (e: ScorecardChannel | ScorecardStore | ScorecardProduct) =>
         coverageKnown &&
         !cov.numerical_distribution.has(e.id) &&
+        !isDc(e) &&
         (type === "product"
           ? cov.numerical_distribution.size > 0
           : type === "store" && ndStoreChannels.has((e as ScorecardStore).channelName));
