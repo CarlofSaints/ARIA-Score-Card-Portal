@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import { useTenant } from "@/contexts/TenantContext";
 import { KPI_DEFS, MODULE_DEFS } from "@/lib/modules";
+import SalesTargetSetup, { BracketEditor } from "@/components/SalesTargetSetup";
 import type {
   KpiWeighting,
   KpiScoringConfig,
   KpiKey,
-  ScoreBracket,
   SalesGrowthMetric,
 } from "@/lib/types";
 
@@ -17,6 +17,7 @@ const GROWTH_METRICS: { value: SalesGrowthMetric; label: string; disabled?: bool
   { value: "ytd_vs_ytd", label: "YTD vs YTD (year-to-date vs last year)" },
   { value: "tm_vs_tmly", label: "TM vs TMLY (this month vs same month last year)" },
   { value: "tm_vs_lm", label: "TM vs LM (this month vs last month)" },
+  { value: "rand_target", label: "Set Rand Value Target" },
 ];
 
 interface QueryTiming {
@@ -231,28 +232,6 @@ export default function ControlCentrePage() {
         : [...prev, { key, brackets: [] } as KpiScoringConfig];
       return base.map((s) => (s.key === key ? { ...s, ...next } : s));
     });
-  }
-
-  function updateBracket(key: KpiKey, idx: number, field: keyof ScoreBracket, value: number) {
-    const cfg = scoringFor(key);
-    const brackets = cfg.brackets.map((b, i) =>
-      i === idx ? { ...b, [field]: value } : b
-    );
-    updateScoring(key, { brackets });
-  }
-
-  function addBracket(key: KpiKey) {
-    const cfg = scoringFor(key);
-    const last = cfg.brackets[cfg.brackets.length - 1];
-    const newBracket: ScoreBracket = last
-      ? { min: last.max, max: last.max + 10, points: last.points }
-      : { min: 0, max: 100, points: 0 };
-    updateScoring(key, { brackets: [...cfg.brackets, newBracket] });
-  }
-
-  function removeBracket(key: KpiKey, idx: number) {
-    const cfg = scoringFor(key);
-    updateScoring(key, { brackets: cfg.brackets.filter((_, i) => i !== idx) });
   }
 
   async function handleSave() {
@@ -503,52 +482,26 @@ export default function ControlCentrePage() {
                           </option>
                         ))}
                       </select>
+                      {scoringFor("sales_growth").salesGrowthMetric === "rand_target" && (
+                        <div className="mt-3">
+                          <SalesTargetSetup
+                            cfg={scoringFor("sales_growth")}
+                            weight={val}
+                            onChange={(next) => updateScoring("sales_growth", next)}
+                          />
+                          <div className="text-xs font-semibold text-[var(--color-text)] mb-1">
+                            Growth points (stores &amp; SKUs scored on growth)
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  <div className="space-y-1.5">
-                    {scoringFor(kpi.key).brackets.map((b, i) => (
-                      <div key={i} className="flex items-center gap-1.5 text-xs">
-                        <input
-                          type="number"
-                          value={b.min}
-                          onChange={(e) => updateBracket(kpi.key, i, "min", Number(e.target.value))}
-                          className="w-16 px-1.5 py-1 rounded border border-[var(--color-border)] bg-white text-right"
-                        />
-                        <span className="text-[var(--color-text-muted)]">to</span>
-                        <input
-                          type="number"
-                          value={b.max}
-                          onChange={(e) => updateBracket(kpi.key, i, "max", Number(e.target.value))}
-                          className="w-16 px-1.5 py-1 rounded border border-[var(--color-border)] bg-white text-right"
-                        />
-                        <span className="text-[var(--color-text-muted)]">% →</span>
-                        <input
-                          type="number"
-                          value={b.points}
-                          onChange={(e) => updateBracket(kpi.key, i, "points", Number(e.target.value))}
-                          className="w-16 px-1.5 py-1 rounded border border-[var(--color-border)] bg-white text-right"
-                        />
-                        <span className="text-[var(--color-text-muted)]">pts</span>
-                        <button
-                          type="button"
-                          onClick={() => removeBracket(kpi.key, i)}
-                          className="ml-auto px-1.5 py-1 rounded text-[var(--color-text-muted)] hover:bg-red-50 hover:text-red-600"
-                          aria-label="Remove bracket"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => addBracket(kpi.key)}
-                    className="mt-2 px-2.5 py-1 rounded-md border border-[var(--color-border)] bg-white text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)]"
-                  >
-                    + Add bracket
-                  </button>
+                  <BracketEditor
+                    unit="%"
+                    brackets={scoringFor(kpi.key).brackets}
+                    onChange={(brackets) => updateScoring(kpi.key, { brackets })}
+                  />
                 </div>
               </div>
             );
