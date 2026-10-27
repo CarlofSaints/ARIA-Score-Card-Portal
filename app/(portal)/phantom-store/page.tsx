@@ -7,7 +7,7 @@ import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { PhantomDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
-import RollUpTable, { LevelSelect, type RollLevel } from "@/components/RollUpTable";
+import RollUpTable, { LevelSelect } from "@/components/RollUpTable";
 import { useBarcodes } from "@/lib/useBarcodes";
 import { useLineDrill } from "@/lib/useLineDrill";
 import DrillChips from "@/components/DrillChips";
@@ -184,7 +184,7 @@ export default function PhantomStorePage() {
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
-        <LevelSelect value={level} onChange={(l: RollLevel) => setLevel(l)} />
+        <LevelSelect value={level} onChange={setLevel} />
         <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All KAMs</option>
           {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}

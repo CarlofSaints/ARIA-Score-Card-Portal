@@ -141,8 +141,9 @@ export default function SalesPage() {
       if (!matches(chForKam, brForKam)) return false;
       if (q && !rowText(r).toLowerCase().includes(q)) return false;
       if (view !== "ytd" && !r.months?.[view]) return false;
-      if (store && r.siteCode !== store) return false;
-      if (product && r.productId !== product) return false;
+      // Drill filters only bite rows that carry the field (switching Level keeps rows).
+      if (store && r.siteCode && r.siteCode !== store) return false;
+      if (product && r.productId && r.productId !== product) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -377,7 +378,8 @@ export default function SalesPage() {
                 {sorted.map((r, i) => (
                   <tr key={`${r.entityId}|${i}`}
                     onClick={onRowClick ? () => onRowClick(r) : undefined}
-                    onKeyDown={onRowClick ? (e) => e.key === "Enter" && onRowClick(r) : undefined}
+                    onKeyDown={onRowClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onRowClick(r); } } : undefined}
+                role={onRowClick ? "button" : undefined}
                     tabIndex={onRowClick ? 0 : undefined}
                     title={onRowClick ? "Click to see what is behind this row" : undefined}
                     className={`border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]${onRowClick ? " cursor-pointer" : ""}`}>

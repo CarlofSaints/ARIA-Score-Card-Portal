@@ -139,7 +139,8 @@ export default function RollUpTable({ rows, level, itemLabel, showSoh = false, o
             {sorted.map((r) => (
               <tr key={r.key}
                 onClick={onDrill ? () => onDrill(r) : undefined}
-                onKeyDown={onDrill ? (e) => e.key === "Enter" && onDrill(r) : undefined}
+                onKeyDown={onDrill ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onDrill(r); } } : undefined}
+                role={onDrill ? "button" : undefined}
                 tabIndex={onDrill ? 0 : undefined}
                 title={onDrill ? "Click to see what is behind this row" : undefined}
                 className={`border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]${onDrill ? " cursor-pointer" : ""}`}>

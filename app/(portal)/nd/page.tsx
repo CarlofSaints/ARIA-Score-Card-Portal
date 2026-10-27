@@ -105,8 +105,9 @@ export default function NdPage() {
       if (brand !== "all" && r.brand && r.brand !== brand) return false;
       if (!matches(r.channelName || undefined, r.brand || undefined)) return false;
       if (q && !`${entityName(r)} ${r.productId} ${barcodes[r.productId] ?? ""}`.toLowerCase().includes(q)) return false;
-      if (store && r.siteCode !== store) return false;
-      if (product && r.productId !== product) return false;
+      // Drill filters only bite rows that carry the field (switching Level keeps rows).
+      if (store && r.siteCode && r.siteCode !== store) return false;
+      if (product && r.productId && r.productId !== product) return false;
       return true;
     });
   }, [baseRows, search, channel, brand, matches, barcodes, store, product]);
@@ -257,7 +258,8 @@ function Grid({
             {rows.map((r, i) => (
               <tr key={`${r.level}|${entityName(r)}|${i}`}
                 onClick={onRowClick ? () => onRowClick(r) : undefined}
-                onKeyDown={onRowClick ? (e) => e.key === "Enter" && onRowClick(r) : undefined}
+                onKeyDown={onRowClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onRowClick(r); } } : undefined}
+                role={onRowClick ? "button" : undefined}
                 tabIndex={onRowClick ? 0 : undefined}
                 title={onRowClick ? "Click to see this channel's stores" : undefined}
                 className={`border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]${onRowClick ? " cursor-pointer" : ""}`}>
