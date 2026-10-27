@@ -91,7 +91,17 @@ export interface KpiWeighting {
 // three are point-in-time levels. "tm_vs_lm" needs last-month data that
 // GetSales_PNP does not yet return — it is inert (neutral) until the SP is
 // extended (pending Mark).
-export type SalesGrowthMetric = "ytd_vs_ytd" | "tm_vs_tmly" | "tm_vs_lm";
+// "rand_target" is not a growth metric: Sales is scored on % of a monthly Rand
+// target set per channel (see ChannelSalesTarget).
+export type SalesGrowthMetric = "ytd_vs_ytd" | "tm_vs_tmly" | "tm_vs_lm" | "rand_target";
+
+// One channel's monthly Rand targets and its own points brackets, which score
+// "% of target achieved" (100 = on target).
+export interface ChannelSalesTarget {
+  channel: string; // channel NAME (= channel id)
+  targets: Record<string, number[]>; // "YYYY" -> 12 monthly Rand targets (Jan..Dec)
+  brackets: ScoreBracket[];
+}
 
 export interface ScoreBracket {
   min: number; // inclusive lower bound of the metric % (e.g. growth % or KPI %)
@@ -107,6 +117,14 @@ export interface KpiScoringConfig {
   brackets: ScoreBracket[];
   // Sales only: which growth metric the brackets are evaluated against.
   salesGrowthMetric?: SalesGrowthMetric;
+  // Sales + rand_target only. Channel scorecards use these targets; KAMs average
+  // their channels' points.
+  salesTargets?: ChannelSalesTarget[];
+  // How Store/Product scorecards score Sales in rand_target mode: "growth" =
+  // YTD vs YTD on `brackets`; "target" = a share of the channel targets (stores
+  // by their share of the channel's YTD sales, SKUs by their share of all sales).
+  targetCascade?: "growth" | "target";
+  skuTargetBrackets?: ScoreBracket[]; // points for SKUs in "target" cascade (stores use their channel's)
 }
 
 // ── Tenant Config ──

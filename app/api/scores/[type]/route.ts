@@ -4,7 +4,8 @@ import { getTenantSlug } from "@/lib/getTenantSlug";
 import { readJson } from "@/lib/blob";
 import { getKpiWeightings } from "@/lib/kpiData";
 import { getKpiScoring } from "@/lib/scoringData";
-import { buildEntityScore, rankScores, salesGrowthPercent } from "@/lib/scoreEngine";
+import { buildEntityScore, pointsForValue, rankScores, salesGrowthPercent } from "@/lib/scoreEngine";
+import { nextPeriod, scoreSalesTargets } from "@/lib/salesTargets";
 import type {
   ScorecardChannel,
   ScorecardStore,
@@ -129,6 +130,32 @@ export async function GET(
       ]);
       const salesById = new Map(sales.map((s) => [s.entityId, s]));
 
+      // Sales vs Rand target (null = this level scores growth as before).
+      const salesCfg = scoring.find((s) => s.key === "sales_growth");
+      const usesTargets =
+        metric === "rand_target" && (type === "channel" || salesCfg?.targetCascade === "target");
+      const [nextSales, channelSales] = usesTargets
+        ? await Promise.all([
+            readJson<SalesData[]>(`${slug}/data/sales/${nextPeriod(period)}/${entityFile}.json`, []),
+            type === "product"
+              ? readJson<SalesData[]>(`${slug}/data/sales/${period}/channels.json`, [])
+              : Promise.resolve([] as SalesData[]),
+          ])
+        : [[], []];
+      const targetScores =
+        usesTargets && salesCfg
+          ? scoreSalesTargets({
+              cfg: salesCfg,
+              level: type,
+              period,
+              now: new Date(),
+              sales,
+              nextSales,
+              stores: type === "store" ? (entities as ScorecardStore[]) : undefined,
+              channelSales,
+            })
+          : null;
+
       // A KAM owns channels (channel/store grain) and brands (product grain).
       const belongs = (e: ScorecardChannel | ScorecardStore | ScorecardProduct): boolean => {
         if (!camMapping) return true;
@@ -166,14 +193,16 @@ export async function GET(
       scores = inScope.map((e) => {
         const id = e.id;
         const name = "name" in e ? e.name : id;
+        const target = targetScores?.get(id);
         const present: Record<KpiKey, boolean> = {
-          sales_growth: presentFor("sales_growth", id),
+          // In target mode an entity without a target shows "—" for Sales.
+          sales_growth: presentFor("sales_growth", id) && (!targetScores || !!target),
           numerical_distribution: presentFor("numerical_distribution", id),
           phantom_inventory: presentFor("phantom_inventory", id),
           oos: presentFor("oos", id),
         };
         const percents: Record<KpiKey, number | null> = {
-          sales_growth: present.sales_growth ? growth(salesById.get(id)) : null,
+          sales_growth: !present.sales_growth ? null : target ? target.percent : growth(salesById.get(id)),
           numerical_distribution: present.numerical_distribution ? at(ndData, id) : null,
           phantom_inventory: present.phantom_inventory ? at(phantomData, id) : null,
           oos: present.oos ? at(oosData, id) : null,
@@ -187,6 +216,7 @@ export async function GET(
           weightings,
           scoring,
           present,
+          brackets: target ? { sales_growth: target.brackets } : undefined,
         });
         score.hasData = KPI_KEYS.some((k) => present[k]);
         if (ndNotRanged(e)) {
@@ -209,13 +239,30 @@ export async function GET(
         return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
       };
 
+      // Target mode: each channel scores on its own target + points table; the
+      // KAM gets the average of those channel points (and of the % achieved).
+      const salesCfg = scoring.find((s) => s.key === "sales_growth");
+      const channelTargets =
+        metric === "rand_target" && salesCfg
+          ? scoreSalesTargets({
+              cfg: salesCfg,
+              level: "channel",
+              period,
+              now: new Date(),
+              sales,
+              nextSales: await readJson<SalesData[]>(`${slug}/data/sales/${nextPeriod(period)}/channels.json`, []),
+            })
+          : null;
+      const salesWeight = weightings.find((w) => w.key === "sales_growth")?.weight ?? 0;
+
       scores = mappings.map((m) => {
         // Per KPI, average only over the KAM's channels that have THAT KPI's
         // data. So a KAM over PnP+SPAR gets OOS from PnP only, while Sales/ND
         // average both. Empty channels never dilute (the Jaryd fix), and a KPI
         // no mapped channel has becomes "—" (its points redistribute).
         const chFor = (kpi: KpiKey) =>
-          m.channelIds.filter((id) => presentFor(kpi, id));
+          m.channelIds.filter((id) => presentFor(kpi, id) && (kpi !== "sales_growth" || !channelTargets || channelTargets.has(id)));
+        const salesTargetsOf = chFor("sales_growth").map((id) => channelTargets?.get(id)).filter((t) => !!t);
         const present: Record<KpiKey, boolean> = {
           sales_growth: chFor("sales_growth").length > 0,
           numerical_distribution: chFor("numerical_distribution").length > 0,
@@ -223,9 +270,11 @@ export async function GET(
           oos: chFor("oos").length > 0,
         };
         const percents: Record<KpiKey, number | null> = {
-          sales_growth: present.sales_growth
-            ? avg(chFor("sales_growth").map((id) => growth(salesById.get(id))))
-            : null,
+          sales_growth: !present.sales_growth
+            ? null
+            : channelTargets
+              ? avg(salesTargetsOf.map((t) => t.percent))
+              : avg(chFor("sales_growth").map((id) => growth(salesById.get(id)))),
           numerical_distribution: present.numerical_distribution
             ? avg(chFor("numerical_distribution").map((id) => at(ndData, id)))
             : null,
@@ -243,6 +292,10 @@ export async function GET(
           weightings,
           scoring,
           present,
+          points:
+            channelTargets && salesTargetsOf.length
+              ? { sales_growth: avg(salesTargetsOf.map((t) => pointsForValue(t.percent, t.brackets, salesWeight)))! }
+              : undefined,
         });
         score.hasData = KPI_KEYS.some((k) => present[k]);
         return score;

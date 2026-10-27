@@ -122,6 +122,25 @@ export function salesGrowthPercent(
 }
 
 /**
+ * Share of a month's target that should have been reached by now: 1 for a past
+ * month, days-so-far / days-in-month for the current one (pro-rated target).
+ * shortcut: assumes sales data runs to yesterday; read the sync's as-of date if
+ * that ever proves wrong.
+ */
+export function targetFraction(period: string, now: Date): number {
+  const [y, m] = period.split("-").map(Number);
+  if (y !== now.getFullYear() || m !== now.getMonth() + 1) return 1;
+  const days = new Date(y, m, 0).getDate();
+  return Math.max(1, now.getDate() - 1) / days;
+}
+
+/** % of target achieved (100 = on target), or null when there is no target. */
+export function targetAchievement(actual: number | undefined, target: number | null | undefined, fraction: number): number | null {
+  if (!target || target <= 0) return null;
+  return Math.round(((actual ?? 0) / (target * fraction)) * 1000) / 10;
+}
+
+/**
  * Build an entity's full score from its KPI metric percentages and the tenant's
  * weightings + bracket config.
  *
@@ -142,6 +161,10 @@ export function buildEntityScore(params: {
   weightings: KpiWeighting[];
   scoring: KpiScoringConfig[];
   present?: Record<KpiKey, boolean>;
+  // Per-entity brackets for a KPI (Sales in target mode: the channel's own table).
+  brackets?: Partial<Record<KpiKey, ScoreBracket[]>>;
+  // Ready-made raw points for a KPI (KAM in target mode: average of channel points).
+  points?: Partial<Record<KpiKey, number>>;
 }): EntityScore {
   const keys: KpiKey[] = [
     "sales_growth",
@@ -164,9 +187,11 @@ export function buildEntityScore(params: {
     if (!isPresent(key)) {
       return { kpiKey: key, rawValue: 0, percent: undefined, score: 0, maxScore: 0, na: true };
     }
-    const brackets = params.scoring.find((s) => s.key === key)?.brackets ?? [];
+    const brackets = params.brackets?.[key] ?? params.scoring.find((s) => s.key === key)?.brackets ?? [];
     const percent = params.percents[key];
-    const rawPoints = percent === null ? 0 : pointsForValue(percent, brackets, weight);
+    const given = params.points?.[key];
+    const rawPoints =
+      given !== undefined ? Math.max(0, Math.min(given, weight)) : percent === null ? 0 : pointsForValue(percent, brackets, weight);
     const score = r1(rawPoints * scale);
     const maxScore = r1(weight * scale);
     return {

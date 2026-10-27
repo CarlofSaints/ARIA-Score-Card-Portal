@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import { useTenant } from "@/contexts/TenantContext";
 import { KPI_DEFS, MODULE_DEFS } from "@/lib/modules";
+import SalesTargetSetup from "@/components/SalesTargetSetup";
 import type {
   KpiWeighting,
   KpiScoringConfig,
@@ -17,6 +18,7 @@ const GROWTH_METRICS: { value: SalesGrowthMetric; label: string; disabled?: bool
   { value: "ytd_vs_ytd", label: "YTD vs YTD (year-to-date vs last year)" },
   { value: "tm_vs_tmly", label: "TM vs TMLY (this month vs same month last year)" },
   { value: "tm_vs_lm", label: "TM vs LM (this month vs last month)" },
+  { value: "rand_target", label: "Set Rand Value Target" },
 ];
 
 interface QueryTiming {
@@ -503,6 +505,18 @@ export default function ControlCentrePage() {
                           </option>
                         ))}
                       </select>
+                      {scoringFor("sales_growth").salesGrowthMetric === "rand_target" && (
+                        <div className="mt-3">
+                          <SalesTargetSetup
+                            cfg={scoringFor("sales_growth")}
+                            weight={val}
+                            onChange={(next) => updateScoring("sales_growth", next)}
+                          />
+                          <div className="text-xs font-semibold text-[var(--color-text)] mb-1">
+                            Growth points (stores &amp; SKUs scored on growth)
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
