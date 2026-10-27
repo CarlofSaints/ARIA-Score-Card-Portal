@@ -8,12 +8,14 @@ import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { PhantomDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
 import RollUpTable, { LevelSelect, type RollLevel } from "@/components/RollUpTable";
+import { useBarcodes } from "@/lib/useBarcodes";
 
 type SortKey =
   | "storeName"
   | "subChannel"
   | "brand"
   | "productName"
+  | "barcode"
   | "siteArticleStatus"
   | "soh"
   | "dateLastSold"
@@ -24,6 +26,7 @@ const COLS: { key: SortKey; label: string; width: number; align?: "right" | "cen
   { key: "storeName", label: "Store", width: 220 },
   { key: "subChannel", label: "Sub-Channel", width: 140 },
   { key: "productName", label: "Product", width: 300 },
+  { key: "barcode", label: "Barcode", width: 150 },
   { key: "brand", label: "Brand", width: 140 },
   { key: "siteArticleStatus", label: "Site Status", width: 130 },
   { key: "soh", label: "SOH", width: 80, align: "right" },
@@ -52,6 +55,7 @@ export default function PhantomStorePage() {
   const [channel, setChannel] = useState("all");
   const [subChannel, setSubChannel] = useState("all");
   const [level, setLevel] = useState<RollLevel>("channel");
+  const barcodes = useBarcodes();
   const { kams, kamId, setKamId, matches } = useKamFilter();
   const [ranged, setRanged] = useState<RangedFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("soh");
@@ -80,8 +84,11 @@ export default function PhantomStorePage() {
 
   // DC-ONLINE is excluded entirely from Phantom; DC stays in the main grid.
   const baseRows = useMemo(
-    () => rows.filter((r) => (r.subChannel || "").toUpperCase() !== "DC-ONLINE"),
-    [rows]
+    () =>
+      rows
+        .filter((r) => (r.subChannel || "").toUpperCase() !== "DC-ONLINE")
+        .map((r) => ({ ...r, barcode: barcodes[r.productId] })),
+    [rows, barcodes]
   );
 
   const brands = useMemo(
@@ -100,7 +107,7 @@ export default function PhantomStorePage() {
   const filtered = useMemo(() => {
     const q = storeSearch.trim().toLowerCase();
     return baseRows.filter((r) => {
-      if (q && !`${r.storeName} ${r.siteCode} ${r.productName} ${r.productId}`.toLowerCase().includes(q)) return false;
+      if (q && !`${r.storeName} ${r.siteCode} ${r.productName} ${r.productId} ${r.barcode ?? ""}`.toLowerCase().includes(q)) return false;
       if (brand !== "all" && r.brand !== brand) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
       if (!matches(r.channelName, r.brand)) return false;
@@ -171,7 +178,7 @@ export default function PhantomStorePage() {
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search store / product…"
+          placeholder="Search store / product / barcode…"
           value={storeSearch}
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
@@ -238,6 +245,7 @@ export default function PhantomStorePage() {
                       <div className="text-[var(--color-text)] truncate">{r.productName}</div>
                       <div className="text-xs text-[var(--color-text-muted)] truncate">{r.channelArticle}</div>
                     </td>
+                    <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.barcode || "—"}</td>
                     <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.brand || "—"}</td>
                     <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.siteArticleStatus || "—"}</td>
                     <td className={`px-3 py-2 text-right font-medium ${r.soh <= 0 ? "text-red-600" : "text-[var(--color-text)]"}`}>
