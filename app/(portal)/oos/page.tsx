@@ -7,6 +7,7 @@ import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { OosDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
+import RollUpTable, { LevelSelect, type RollLevel } from "@/components/RollUpTable";
 
 type SortKey = "storeName" | "subChannel" | "brand" | "productName";
 
@@ -28,6 +29,7 @@ export default function OosPage() {
   const [storeSearch, setStoreSearch] = useState("");
   const [brand, setBrand] = useState("all");
   const [channel, setChannel] = useState("all");
+  const [level, setLevel] = useState<RollLevel>("channel");
   const { kams, kamId, setKamId, matches } = useKamFilter();
   const [sortKey, setSortKey] = useState<SortKey>("storeName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -70,7 +72,7 @@ export default function OosPage() {
   const filtered = useMemo(() => {
     const q = storeSearch.trim().toLowerCase();
     return baseRows.filter((r) => {
-      if (q && !`${r.storeName} ${r.siteCode}`.toLowerCase().includes(q)) return false;
+      if (q && !`${r.storeName} ${r.siteCode} ${r.productName} ${r.productId}`.toLowerCase().includes(q)) return false;
       if (brand !== "all" && r.brand !== brand) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
       if (!matches(r.channelName, r.brand)) return false;
@@ -133,11 +135,12 @@ export default function OosPage() {
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search store name or code…"
+          placeholder="Search store / product…"
           value={storeSearch}
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
+        <LevelSelect value={level} onChange={setLevel} />
         <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All KAMs</option>
           {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
@@ -162,7 +165,7 @@ export default function OosPage() {
         </div>
       ) : (
         <>
-          <Grid
+          {level !== "detail" ? <RollUpTable rows={mainRows} level={level} itemLabel="OOS items" /> : <Grid
             rows={mainRows}
             totalCount={mainRows.length}
             widths={widths}
@@ -171,13 +174,13 @@ export default function OosPage() {
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={toggleSort}
-          />
+          />}
           {dcRows.length > 0 && (
             <div className="mt-8">
               <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">
                 Distribution Centres (DC)
               </h2>
-              <Grid
+              {level !== "detail" ? <RollUpTable rows={dcRows} level={level} itemLabel="OOS items" /> : <Grid
                 rows={dcRows}
                 totalCount={dcRows.length}
                 widths={widths}
@@ -186,7 +189,7 @@ export default function OosPage() {
                 sortKey={sortKey}
                 sortDir={sortDir}
                 onSort={toggleSort}
-              />
+              />}
             </div>
           )}
         </>

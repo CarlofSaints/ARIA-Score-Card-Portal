@@ -66,6 +66,17 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
   // on the CAM scorecard, which is already per-KAM.
   const { kams, kamId, setKamId } = useKamFilter();
 
+  // Channel filter (store scorecard only; server-side like the KAM filter).
+  const [channel, setChannel] = useState("all");
+  const [channels, setChannels] = useState<string[]>([]);
+  useEffect(() => {
+    if (type !== "store") return;
+    authFetch("/api/data/channels")
+      .then((r) => r.json())
+      .then((d) => setChannels(Array.isArray(d.channels) ? d.channels.map((c: { name: string }) => c.name).sort() : []))
+      .catch(() => {});
+  }, [type]);
+
   const cols = useMemo(
     () => [
       ...FIXED_COLS,
@@ -109,7 +120,8 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     setLoading(true);
     let alive = true;
     const camQ = kamId !== "all" ? `&cam=${encodeURIComponent(kamId)}` : "";
-    authFetch(`/api/scores/${type}?period=${selected}${camQ}`)
+    const chQ = channel !== "all" ? `&channel=${encodeURIComponent(channel)}` : "";
+    authFetch(`/api/scores/${type}?period=${selected}${camQ}${chQ}`)
       .then((r) => r.json())
       .then((data) => {
         if (!alive) return;
@@ -123,7 +135,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     return () => {
       alive = false;
     };
-  }, [type, selected, kamId]);
+  }, [type, selected, kamId, channel]);
 
   function valueFor(s: EntityScore, key: SortKey): number | string {
     if (key === "name") return s.entityName;
@@ -174,6 +186,16 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
             >
               <option value="all">All KAMs</option>
               {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+            </select>
+          )}
+          {type === "store" && (
+            <select
+              value={channel}
+              onChange={(e) => setChannel(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
+            >
+              <option value="all">All channels</option>
+              {channels.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           )}
           <label className="text-xs text-[var(--color-text-muted)]">Month</label>
@@ -269,7 +291,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
                     if (s.hasData === false || ks?.na) {
                       return (
                         <td key={kpi.key} className="text-center px-3 py-3 text-[var(--color-text-muted)]">
-                          —
+                          {s.hasData !== false && ks?.notRanged ? <span className="text-xs">Not ranged</span> : "—"}
                         </td>
                       );
                     }
