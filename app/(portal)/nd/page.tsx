@@ -7,12 +7,13 @@ import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { NdDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
+import { LevelSelect } from "@/components/RollUpTable";
 
-type SortKey = "name" | "level" | "channelName" | "subChannel" | "brand" | "ndPercent" | "rangedCount" | "totalCount";
+type Level = NdDetailRow["level"];
+type SortKey = "name" | "channelName" | "subChannel" | "brand" | "ndPercent" | "rangedCount" | "totalCount";
 
 const COLS: { key: SortKey; label: string; width: number; align?: "right" | "center"; sortable?: boolean }[] = [
-  { key: "name", label: "Entity", width: 300 },
-  { key: "level", label: "Level", width: 90 },
+  { key: "name", label: "Name", width: 300 },
   { key: "channelName", label: "Channel", width: 120 },
   { key: "subChannel", label: "Sub-Channel", width: 140 },
   { key: "brand", label: "Brand", width: 150 },
@@ -20,6 +21,13 @@ const COLS: { key: SortKey; label: string; width: number; align?: "right" | "cen
   { key: "totalCount", label: "Ranged", width: 100, align: "right" },
   { key: "ndPercent", label: "ND %", width: 90, align: "right" },
 ];
+
+// Columns per grain: picking a level swaps both the rows and the columns shown.
+const LEVEL_COLS: Record<Level, SortKey[]> = {
+  channel: ["name", "rangedCount", "totalCount", "ndPercent"],
+  store: ["name", "channelName", "subChannel", "rangedCount", "totalCount", "ndPercent"],
+  product: ["name", "brand", "rangedCount", "totalCount", "ndPercent"],
+};
 
 function entityName(r: NdDetailRow): string {
   if (r.level === "product") return r.productName || r.productId;
@@ -38,6 +46,7 @@ export default function NdPage() {
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("all");
   const [brand, setBrand] = useState("all");
+  const [level, setLevel] = useState<Level>("channel");
   const { kams, kamId, setKamId, matches } = useKamFilter();
   const [sortKey, setSortKey] = useState<SortKey>("ndPercent");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -62,31 +71,38 @@ export default function NdPage() {
       .finally(() => setFetching(false));
   }, [user]);
 
-  // Channel-level rows are no longer shown — only store and product.
-  const baseRows = useMemo(() => rows.filter((r) => r.level !== "channel"), [rows]);
+  // Nothing ranged = no ND% to show (sync writes 0%), so leave those rows out
+  // rather than list them as 0% and drag the average down.
+  const baseRows = useMemo(() => rows.filter((r) => r.level === level && r.totalCount > 0), [rows, level]);
+  const cols = useMemo(() => COLS.filter((c) => LEVEL_COLS[level].includes(c.key)), [level]);
 
   const channels = useMemo(
-    () => Array.from(new Set(baseRows.map((r) => r.channelName).filter(Boolean))).sort(),
-    [baseRows]
+    () => Array.from(new Set(rows.map((r) => r.channelName).filter(Boolean))).sort(),
+    [rows]
   );
   const brands = useMemo(
-    () => Array.from(new Set(baseRows.map((r) => r.brand).filter(Boolean))).sort(),
-    [baseRows]
+    () => Array.from(new Set(rows.map((r) => r.brand).filter(Boolean))).sort(),
+    [rows]
   );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return baseRows.filter((r) => {
-      if (channel !== "all" && r.channelName !== channel) return false;
-      if (brand !== "all" && r.brand !== brand) return false;
-      if (!matches(r.channelName, r.brand)) return false;
+      // Product rows carry no channel, store/channel rows no brand: each filter
+      // only applies where the row has that field.
+      if (channel !== "all" && r.channelName && r.channelName !== channel) return false;
+      if (brand !== "all" && r.brand && r.brand !== brand) return false;
+      if (!matches(r.channelName || undefined, r.brand || undefined)) return false;
       if (q && !entityName(r).toLowerCase().includes(q)) return false;
       return true;
     });
   }, [baseRows, search, channel, brand, matches]);
 
+  // A sort column hidden by the current grain falls back to ND %.
+  const activeSort: SortKey = LEVEL_COLS[level].includes(sortKey) ? sortKey : "ndPercent";
   const sortRows = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
+    const sortKey = activeSort;
     return (arr: NdDetailRow[]) =>
       [...arr].sort((a, b) => {
         if (sortKey === "name") return entityName(a).localeCompare(entityName(b)) * dir;
@@ -95,7 +111,7 @@ export default function NdPage() {
         if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
         return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
       });
-  }, [sortKey, sortDir]);
+  }, [activeSort, sortDir]);
 
   // DC store rows are split into their own grid below the main one.
   const mainRows = useMemo(
@@ -125,7 +141,7 @@ export default function NdPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-[var(--color-dark)]">Numerical Distribution</h1>
         <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          Ranged product coverage by store and product{period ? ` · ${period}` : ""}
+          Ranged product coverage by channel, store and product{period ? ` · ${period}` : ""}
         </p>
       </div>
 
@@ -143,18 +159,20 @@ export default function NdPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
+        <LevelSelect value={level} onChange={(l) => setLevel(l as Level)} detail={false} />
         <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All KAMs</option>
           {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
         </select>
-        <select value={channel} onChange={(e) => setChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+        {/* Product ND is national (no channel), store/channel ND has no brand: show only the filter that applies. */}
+        {level !== "product" && <select value={channel} onChange={(e) => setChannel(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All channels</option>
           {channels.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={brand} onChange={(e) => setBrand(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
+        </select>}
+        {level === "product" && <select value={brand} onChange={(e) => setBrand(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All brands</option>
           {brands.map((b) => <option key={b} value={b}>{b}</option>)}
-        </select>
+        </select>}
       </div>
 
       {fetching ? (
@@ -167,11 +185,11 @@ export default function NdPage() {
         </div>
       ) : (
         <>
-          <Grid rows={mainRows} widths={widths} startResize={startResize} totalWidth={totalWidth(COLS.map((c) => c.key))} sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+          <Grid rows={mainRows} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
           {dcRows.length > 0 && (
             <div className="mt-8">
               <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">Distribution Centres (DC)</h2>
-              <Grid rows={dcRows} widths={widths} startResize={startResize} totalWidth={totalWidth(COLS.map((c) => c.key))} sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+              <Grid rows={dcRows} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
             </div>
           )}
         </>
@@ -181,9 +199,10 @@ export default function NdPage() {
 }
 
 function Grid({
-  rows, widths, startResize, totalWidth, sortKey, sortDir, onSort,
+  rows, cols, widths, startResize, totalWidth, sortKey, sortDir, onSort,
 }: {
   rows: NdDetailRow[];
+  cols: typeof COLS;
   widths: Record<string, number>;
   startResize: (k: string) => (e: React.MouseEvent) => void;
   totalWidth: number;
@@ -196,11 +215,11 @@ function Grid({
       <div className="overflow-x-auto max-h-[70vh]">
         <table className="text-sm" style={{ tableLayout: "fixed", width: totalWidth, minWidth: "100%" }}>
           <colgroup>
-            {COLS.map((c) => <col key={c.key} style={{ width: widths[c.key] }} />)}
+            {cols.map((c) => <col key={c.key} style={{ width: widths[c.key] }} />)}
           </colgroup>
           <thead className="sticky top-0 bg-[var(--color-bg)] z-10">
             <tr className="text-left text-[var(--color-text-muted)]">
-              {COLS.map((c) => (
+              {cols.map((c) => (
                 <Th key={c.key} label={c.label} colKey={c.key} align={c.align}
                   sortKey={sortKey} sortDir={sortDir}
                   onSort={c.sortable === false ? undefined : onSort}
@@ -211,14 +230,7 @@ function Grid({
           <tbody>
             {rows.map((r, i) => (
               <tr key={`${r.level}|${entityName(r)}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
-                <td className="px-3 py-2 font-medium text-[var(--color-text)] truncate">{entityName(r)}</td>
-                <td className="px-3 py-2 text-[var(--color-text-muted)] capitalize">{r.level}</td>
-                <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.channelName || "—"}</td>
-                <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.subChannel || "—"}</td>
-                <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.brand || "—"}</td>
-                <td className="px-3 py-2 text-right text-[var(--color-text)]">{r.rangedCount?.toLocaleString() ?? "—"}</td>
-                <td className="px-3 py-2 text-right text-[var(--color-text)]">{r.totalCount?.toLocaleString() ?? "—"}</td>
-                <td className="px-3 py-2 text-right font-medium text-[var(--color-text)]">{r.ndPercent != null ? `${r.ndPercent}%` : "—"}</td>
+                {cols.map((c) => <td key={c.key} className={`px-3 py-2 text-[var(--color-text)] ${c.align === "right" ? "text-right" : "truncate"}${c.key === "name" || c.key === "ndPercent" ? " font-medium" : ""}`}>{cell(c.key, r)}</td>)}
               </tr>
             ))}
           </tbody>
@@ -229,6 +241,16 @@ function Grid({
       </div>
     </div>
   );
+}
+
+function cell(key: SortKey, r: NdDetailRow): string {
+  switch (key) {
+    case "name": return entityName(r);
+    case "rangedCount": return r.rangedCount?.toLocaleString() ?? "—";
+    case "totalCount": return r.totalCount?.toLocaleString() ?? "—";
+    case "ndPercent": return r.ndPercent != null ? `${r.ndPercent}%` : "—";
+    default: return r[key] || "—";
+  }
 }
 
 function StatCard({ label, value, suffix = "" }: { label: string; value: number; suffix?: string }) {

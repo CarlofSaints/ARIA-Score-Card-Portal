@@ -60,6 +60,8 @@ export async function GET(
       const mappings = await readJson<CamMapping[]>(`${slug}/cam-mappings.json`, []);
       camMapping = mappings.find((m) => m.camUserId === camId) || null;
     }
+    // Optional channel filter (store scorecard): channel NAME, like the KAM filter.
+    const channelQ = type === "store" ? searchParams.get("channel") : null;
 
     const weightings = await getKpiWeightings(slug);
     const scoring = await getKpiScoring(slug);
@@ -138,7 +140,30 @@ export async function GET(
         return !camMapping.channelIds.length || camMapping.channelIds.includes(ch);
       };
 
-      scores = entities.filter(belongs).map((e) => {
+      const inScope = entities.filter(
+        (e) => belongs(e) && (!channelQ || channelQ === "all" || (e as ScorecardStore).channelName === channelQ)
+      );
+
+      // ND is row-driven off the ranging list, so an entity with no ranged SKUs
+      // gets no ND% at all. Flag it "not ranged" only when ND did sync for it:
+      // a store whose channel has other stores with ND, or any product once ND ran.
+      // DCs are never in the ranging pull, so they stay a plain "—".
+      const isDc = (e: ScorecardChannel | ScorecardStore | ScorecardProduct) =>
+        (e as ScorecardStore).subChannel?.toUpperCase().startsWith("DC") ?? false;
+      const ndStoreChannels = new Set(
+        type === "store"
+          ? (entities as ScorecardStore[]).filter((s) => cov.numerical_distribution.has(s.id)).map((s) => s.channelName)
+          : []
+      );
+      const ndNotRanged = (e: ScorecardChannel | ScorecardStore | ScorecardProduct) =>
+        coverageKnown &&
+        !cov.numerical_distribution.has(e.id) &&
+        !isDc(e) &&
+        (type === "product"
+          ? cov.numerical_distribution.size > 0
+          : type === "store" && ndStoreChannels.has((e as ScorecardStore).channelName));
+
+      scores = inScope.map((e) => {
         const id = e.id;
         const name = "name" in e ? e.name : id;
         const present: Record<KpiKey, boolean> = {
@@ -164,6 +189,10 @@ export async function GET(
           present,
         });
         score.hasData = KPI_KEYS.some((k) => present[k]);
+        if (ndNotRanged(e)) {
+          const nd = score.kpiScores.find((k) => k.kpiKey === "numerical_distribution");
+          if (nd?.na) nd.notRanged = true;
+        }
         return score;
       });
     } else {

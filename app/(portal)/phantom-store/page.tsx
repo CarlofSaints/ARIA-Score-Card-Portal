@@ -7,6 +7,7 @@ import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { PhantomDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
+import RollUpTable, { LevelSelect, type RollLevel } from "@/components/RollUpTable";
 
 type SortKey =
   | "storeName"
@@ -50,6 +51,7 @@ export default function PhantomStorePage() {
   const [brand, setBrand] = useState("all");
   const [channel, setChannel] = useState("all");
   const [subChannel, setSubChannel] = useState("all");
+  const [level, setLevel] = useState<RollLevel>("channel");
   const { kams, kamId, setKamId, matches } = useKamFilter();
   const [ranged, setRanged] = useState<RangedFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("soh");
@@ -98,7 +100,7 @@ export default function PhantomStorePage() {
   const filtered = useMemo(() => {
     const q = storeSearch.trim().toLowerCase();
     return baseRows.filter((r) => {
-      if (q && !`${r.storeName} ${r.siteCode}`.toLowerCase().includes(q)) return false;
+      if (q && !`${r.storeName} ${r.siteCode} ${r.productName} ${r.productId}`.toLowerCase().includes(q)) return false;
       if (brand !== "all" && r.brand !== brand) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
       if (!matches(r.channelName, r.brand)) return false;
@@ -169,11 +171,12 @@ export default function PhantomStorePage() {
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search store name or code…"
+          placeholder="Search store / product…"
           value={storeSearch}
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
+        <LevelSelect value={level} onChange={setLevel} />
         <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All KAMs</option>
           {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
@@ -207,6 +210,8 @@ export default function PhantomStorePage() {
             No phantom data for {period || "this period"}. Run a sync in Control Centre &rarr; Data Sync.
           </p>
         </div>
+      ) : level !== "detail" ? (
+        <RollUpTable rows={filtered} level={level} itemLabel="Phantom items" showSoh />
       ) : (
         <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
           <div className="overflow-x-auto max-h-[70vh]">

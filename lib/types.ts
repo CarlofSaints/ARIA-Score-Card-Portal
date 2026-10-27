@@ -241,6 +241,7 @@ export interface KpiScore {
   score: number; // weighted score contribution (after any redistribution)
   maxScore: number; // maximum possible weighted score (effective weight)
   na?: boolean; // true = this KPI has no data for this entity (show "—", excluded; its points were redistributed)
+  notRanged?: boolean; // ND only: na because the entity has no ranged SKUs, while its channel's ND did sync
 }
 
 export interface EntityScore {
