@@ -7,6 +7,7 @@ import { getKpiScoring } from "@/lib/scoringData";
 import { buildEntityScore, pointsForValue, rankScores, salesGrowthPercent } from "@/lib/scoreEngine";
 import { scoreSalesTargets, type SalesHistory } from "@/lib/salesTargets";
 import { provinceGroups, provinceName } from "@/lib/provinceScores";
+import { getTenantConfig } from "@/lib/getTenantConfig";
 import type {
   ScorecardChannel,
   ScorecardStore,
@@ -147,11 +148,15 @@ export async function GET(
     if (type === "province") {
       // Province grid (?by=province) or channel × province grid (?by=channel).
       // Filters repeat: &ch=PnP&ch=SPAR, &prov=Gauteng, &sub=CORP.
-      const [stores, storeSales, ndRows] = await Promise.all([
+      const [allStores, storeSales, ndRows, tenantCfg] = await Promise.all([
         readJson<ScorecardStore[]>(`${slug}/data/stores.json`, []),
         readJson<SalesData[]>(`${slug}/data/sales/${period}/stores.json`, []),
         readJson<NdDetailRow[]>(`${slug}/data/nd/${period}/detail.json`, []),
+        getTenantConfig(slug),
       ]);
+      // Admin's province list (Control Centre): stores elsewhere are left out entirely.
+      const shown = tenantCfg?.includedProvinces;
+      const stores = shown?.length ? allStores.filter((s) => shown.includes(provinceName(s.region))) : allStores;
       const ch = searchParams.getAll("ch");
       const prov = searchParams.getAll("prov");
       const sub = searchParams.getAll("sub");

@@ -6,6 +6,7 @@ import { useAuth, authFetch } from "@/lib/useAuth";
 import { useTenant } from "@/contexts/TenantContext";
 import { KPI_DEFS, MODULE_DEFS } from "@/lib/modules";
 import SalesTargetSetup, { BracketEditor } from "@/components/SalesTargetSetup";
+import ProvinceSettings from "@/components/ProvinceSettings";
 import type {
   KpiWeighting,
   KpiScoringConfig,
@@ -620,6 +621,8 @@ export default function ControlCentrePage() {
           After changing this, run a sync to recalculate.
         </p>
       </section>
+
+      <ProvinceSettings />
 
       {/* Auto-Sync Schedule */}
       <section className="bg-white rounded-xl border border-[var(--color-border)] p-6 mb-6">

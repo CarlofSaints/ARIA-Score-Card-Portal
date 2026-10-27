@@ -148,6 +148,7 @@ export interface TenantConfig {
   phantomLookbackDays?: number; // Days to look back for phantom stock detection (default 60)
   ndRollingDays?: number; // Rolling scan window (days) for Numerical Distribution — SP @ScanRange (default 60)
   syncTimes?: string[]; // Local (SAST) hours to auto-sync, e.g. ["08:00","14:00"]
+  includedProvinces?: string[]; // Province Score Card shows only these (unset = all)
   createdAt: string; // ISO
   updatedAt: string; // ISO
 }
