@@ -1169,16 +1169,19 @@ export async function runSyncForTenant(
   ];
 
   // Barcodes: "Product Barcode EA" from whichever SP returns it, keyed by SKU.
-  // Own file, merged over the last one, so a partial sync never drops any.
+  // Own file, merged over the last one, so a partial sync never drops any. The
+  // product master is applied LAST so it wins over a KPI row's barcode.
+  // shortcut: a numeric SQL column loses leading zeros here; ask for it as text
+  // if UPC/EAN-8 codes ever show up short.
   const barcodesKey = `${slug}/data/barcodes.json`;
   const barcodes = await readJson<Record<string, string>>(barcodesKey, {});
   let barcodeRows = 0;
   const barcodeSources: [Record<string, unknown>[], string][] = [
-    [productMasterRows, "Client Product ID"],
     [salesRes.data as unknown as Record<string, unknown>[], "Product ID"],
     [ndRes.data as unknown as Record<string, unknown>[], "Product ID"],
     [oosRes.data as unknown as Record<string, unknown>[], "Product ID"],
     [phantomRes.data as unknown as Record<string, unknown>[], "Product ID"],
+    [productMasterRows, "Client Product ID"],
   ];
   for (const [rows, skuCol] of barcodeSources) {
     for (const r of rows) {

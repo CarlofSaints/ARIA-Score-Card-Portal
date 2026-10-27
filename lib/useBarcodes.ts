@@ -7,7 +7,7 @@ export function useBarcodes(enabled = true): Record<string, string> {
   useEffect(() => {
     if (!enabled) return;
     authFetch("/api/data/barcodes")
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : {}))
       .then((d) => setBarcodes(d.barcodes && typeof d.barcodes === "object" ? d.barcodes : {}))
       .catch(() => {});
   }, [enabled]);

@@ -235,7 +235,7 @@ function Grid({
           <tbody>
             {rows.map((r, i) => (
               <tr key={`${r.level}|${entityName(r)}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
-                {cols.map((c) => <td key={c.key} className={`px-3 py-2 text-[var(--color-text)] ${c.align === "right" ? "text-right" : "truncate"}${c.key === "name" || c.key === "ndPercent" ? " font-medium" : ""}`}>{c.key === "barcode" ? barcodes[r.productId] || "—" : cell(c.key, r)}</td>)}
+                {cols.map((c) => <td key={c.key} className={`px-3 py-2 text-[var(--color-text)] ${c.align === "right" ? "text-right" : "truncate"}${c.key === "name" || c.key === "ndPercent" ? " font-medium" : ""}`}>{cell(c.key, r, barcodes)}</td>)}
               </tr>
             ))}
           </tbody>
@@ -248,10 +248,10 @@ function Grid({
   );
 }
 
-function cell(key: SortKey, r: NdDetailRow): string {
+function cell(key: SortKey, r: NdDetailRow, barcodes: Record<string, string>): string {
   switch (key) {
     case "name": return entityName(r);
-    case "barcode": return "";
+    case "barcode": return barcodes[r.productId] || "—";
     case "rangedCount": return r.rangedCount?.toLocaleString() ?? "—";
     case "totalCount": return r.totalCount?.toLocaleString() ?? "—";
     case "ndPercent": return r.ndPercent != null ? `${r.ndPercent}%` : "—";
