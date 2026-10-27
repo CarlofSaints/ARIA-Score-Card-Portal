@@ -21,7 +21,7 @@ interface TenantBrand {
 
 const DEFAULT_BRAND: TenantBrand = {
   slug: "",
-  name: "ARIA Score Card",
+  name: "ARIA Scorecard",
   primaryColor: "#3D6273",
   secondaryColor: "#5A8A9F",
   accentColor: "#E04E2A",
@@ -45,7 +45,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         if (data) {
           setBrand({
             slug: data.slug || "",
-            name: data.name || "ARIA Score Card",
+            name: data.name || "ARIA Scorecard",
             primaryColor: data.primaryColor || DEFAULT_BRAND.primaryColor,
             secondaryColor:
               data.secondaryColor || DEFAULT_BRAND.secondaryColor,

@@ -33,7 +33,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </svg>
         </button>
         <span className="text-sm font-semibold text-[var(--color-dark)]">
-          ARIA Score Card
+          ARIA Scorecard
         </span>
       </header>
 

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
     const token = await createResetToken(email, slug);
     const config = await getTenantConfig(slug);
-    const tenantName = config?.name || "ARIA Score Card";
+    const tenantName = config?.name || "ARIA Scorecard";
 
     // Build reset URL from configured values only, never the request's Host.
     // Tenant domain first, then the site URL, then the slug subdomain.

@@ -8,7 +8,7 @@ function getResend(): Resend {
   return new Resend(key);
 }
 
-const FROM = "ARIA Score Card <noreply@outerjoin.co.za>";
+const FROM = "ARIA Scorecard <noreply@outerjoin.co.za>";
 const ARIA_LOGO = "https://aria-score-card-portal.vercel.app/aria-logo.png";
 const BASE_DOMAIN = "ariascorecard.co.za";
 
@@ -89,7 +89,7 @@ export async function sendWelcomeEmail(params: {
   await resend.emails.send({
     from: FROM,
     to: params.to,
-    subject: `Welcome to ${params.tenantName} — ARIA Score Card`,
+    subject: `Welcome to ${params.tenantName} — ARIA Scorecard`,
     html: `
       <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">
         <!-- Header Banner -->
@@ -100,7 +100,7 @@ export async function sendWelcomeEmail(params: {
             </td>
             ${clientLogo ? `<td><img src="${clientLogo}" alt="${esc(params.tenantName)}" width="40" height="40" style="display:block;border-radius:8px;object-fit:contain;background:#fff;padding:4px;" /></td>` : ""}
           </tr></table>
-          <h1 style="color:#ffffff;font-size:22px;margin:16px 0 4px;font-weight:700;">Welcome to ARIA Score Card</h1>
+          <h1 style="color:#ffffff;font-size:22px;margin:16px 0 4px;font-weight:700;">Welcome to ARIA Scorecard</h1>
           <p style="color:rgba(255,255,255,0.85);font-size:14px;margin:0;">${esc(params.tenantName)}</p>
         </div>
 

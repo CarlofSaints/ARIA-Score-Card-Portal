@@ -139,7 +139,7 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] px-4">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <Image src="/aria-logo.png" alt="ARIA Score Card" width={64} height={64} className="mb-4" />
+          <Image src="/aria-logo.png" alt="ARIA Scorecard" width={64} height={64} className="mb-4" />
           <h1 className="text-xl font-bold text-[var(--color-dark)]">Set New Password</h1>
         </div>
         <div className="bg-white rounded-xl border border-[var(--color-border)] p-6 shadow-sm">

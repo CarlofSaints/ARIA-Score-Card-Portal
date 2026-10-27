@@ -86,13 +86,13 @@ await write(MARK_KEY, { at: now });
 let failed = 0;
 for (const m of mails) {
   const { error } = await resend.emails.send({
-    from: "ARIA Score Card <noreply@outerjoin.co.za>",
+    from: "ARIA Scorecard <noreply@outerjoin.co.za>",
     to: m.to,
-    subject: "Please set a new password for ARIA Score Card",
+    subject: "Please set a new password for ARIA Scorecard",
     html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
       <h2 style="color:#3D6273;">Please set a new password</h2>
       <p>Hi ${esc(String(m.name).trim())},</p>
-      <p>As part of a security upgrade we have reset all ARIA Score Card passwords. Please click the button below to choose a new one.</p>
+      <p>As part of a security upgrade we have reset all ARIA Scorecard passwords. Please click the button below to choose a new one.</p>
       <p><a href="${esc(m.url)}" style="display:inline-block;padding:12px 24px;background:#3D6273;color:#fff;text-decoration:none;border-radius:6px;">Set my new password</a></p>
       <p style="color:#718096;font-size:13px;">The link works for 3 days. After that, use "Forgot password" on the login page at ${esc(m.site)}.</p>
       <p style="margin-top:24px;color:#718096;font-size:13px;">Powered by OuterJoin</p>

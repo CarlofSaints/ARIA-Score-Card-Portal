@@ -78,13 +78,13 @@ export default function LoginPage() {
         <div className="flex flex-col items-center mb-8">
           <Image
             src="/aria-logo.png"
-            alt="ARIA Score Card"
+            alt="ARIA Scorecard"
             width={64}
             height={64}
             className="mb-4"
           />
           <h1 className="text-xl font-bold text-[var(--color-dark)]">
-            ARIA Score Card
+            ARIA Scorecard
           </h1>
           <p className="text-sm text-[var(--color-text-muted)]">
             Sign in to your account

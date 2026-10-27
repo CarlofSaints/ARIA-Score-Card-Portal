@@ -74,7 +74,7 @@ export default function ProvinceSettings() {
     <section className="bg-white rounded-xl border border-[var(--color-border)] p-6 mb-6">
       <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">Countries &amp; provinces shown</h2>
       <p className="text-sm text-[var(--color-text-muted)] mb-4">
-        Stores outside the ticked countries and provinces are left out of the Province and Store Score Cards.
+        Stores outside the ticked countries and provinces are left out of the Province and Store Scorecards.
         Nothing ticked in a list = all shown.
       </p>
 
