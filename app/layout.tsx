@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ARIA Score Card",
+  title: "ARIA Scorecard",
   description: "Multi-tenant scorecard portal by OuterJoin",
   icons: { icon: "/aria-logo.png" },
 };

@@ -3,28 +3,28 @@ import type { ModuleDef, ModuleKey, KpiDef, KpiKey, KpiScoringConfig } from "./t
 export const MODULE_DEFS: ModuleDef[] = [
   {
     key: "cam_scorecard",
-    label: "KAM Score Card",
+    label: "KAM Scorecard",
     route: "/cam-scorecard",
     icon: "Users",
     description: "Scores KAMs across their assigned channels and brands",
   },
   {
     key: "channel_scorecard",
-    label: "Channel Score Card",
+    label: "Channel Scorecard",
     route: "/channel-scorecard",
     icon: "Store",
     description: "Scores retail channels",
   },
   {
     key: "store_scorecard",
-    label: "Store Score Card",
+    label: "Store Scorecard",
     route: "/store-scorecard",
     icon: "MapPin",
     description: "Scores individual stores",
   },
   {
     key: "product_scorecard",
-    label: "Product Score Card",
+    label: "Product Scorecard",
     route: "/product-scorecard",
     icon: "Package",
     description: "Scores products and SKUs",

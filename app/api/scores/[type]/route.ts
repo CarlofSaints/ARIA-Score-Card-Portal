@@ -8,6 +8,7 @@ import { buildEntityScore, pointsForValue, rankScores, salesGrowthPercent } from
 import { scoreSalesTargets, type SalesHistory } from "@/lib/salesTargets";
 import { provinceGroups, provinceName, storeShown } from "@/lib/provinceScores";
 import { getTenantConfig } from "@/lib/getTenantConfig";
+import { checkedPeriod } from "@/lib/period";
 import type {
   ScorecardChannel,
   ScorecardStore,
@@ -54,7 +55,7 @@ export async function GET(
     const { searchParams } = new URL(req.url);
     const now = new Date();
     const period =
-      searchParams.get("period") ||
+      checkedPeriod(searchParams.get("period")) ||
       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
     // Optional KAM filter (channel/store/product scorecards only). CamMapping
@@ -340,7 +341,8 @@ export async function GET(
           oos: present.oos ? avg(chFor("oos").map((id) => at(oosData, id))) : null,
         };
         const score = buildEntityScore({
-          entityId: m.id,
+          // The KAM's user id: what the KAM filter on the detail pages uses (drill-down links).
+          entityId: m.camUserId || m.id,
           entityName: m.camName,
           entityType: "cam",
           period,

@@ -7,8 +7,10 @@ import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { PhantomDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
-import RollUpTable, { LevelSelect, type RollLevel } from "@/components/RollUpTable";
+import RollUpTable, { LevelSelect } from "@/components/RollUpTable";
 import { useBarcodes } from "@/lib/useBarcodes";
+import { useLineDrill } from "@/lib/useLineDrill";
+import DrillChips from "@/components/DrillChips";
 
 type SortKey =
   | "storeName"
@@ -52,11 +54,10 @@ export default function PhantomStorePage() {
 
   const [storeSearch, setStoreSearch] = useState("");
   const [brand, setBrand] = useState("all");
-  const [channel, setChannel] = useState("all");
   const [subChannel, setSubChannel] = useState("all");
-  const [level, setLevel] = useState<RollLevel>("channel");
+  const { drill, level, setLevel, channel, setChannel, keep, onDrill, chips, periodQuery } = useLineDrill();
   const barcodes = useBarcodes();
-  const { kams, kamId, setKamId, matches } = useKamFilter();
+  const { kams, kamId, setKamId, matches } = useKamFilter(drill.kam);
   const [ranged, setRanged] = useState<RangedFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("soh");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -71,7 +72,7 @@ export default function PhantomStorePage() {
 
   useEffect(() => {
     if (!user) return;
-    authFetch("/api/data/phantom")
+    authFetch(`/api/data/phantom${periodQuery}`)
       .then((r) => r.json())
       .then((d) => {
         setRows(Array.isArray(d.rows) ? d.rows : []);
@@ -80,7 +81,7 @@ export default function PhantomStorePage() {
       })
       .catch(() => {})
       .finally(() => setFetching(false));
-  }, [user]);
+  }, [user, periodQuery]);
 
   // DC-ONLINE is excluded entirely from Phantom; DC stays in the main grid.
   const baseRows = useMemo(
@@ -115,9 +116,9 @@ export default function PhantomStorePage() {
       if (ranged === "ranged" && r.ranged !== true) return false;
       if (ranged === "not" && r.ranged !== false) return false;
       if (ranged === "unknown" && r.ranged !== null) return false;
-      return true;
+      return keep(r);
     });
-  }, [baseRows, storeSearch, brand, channel, subChannel, ranged, matches]);
+  }, [baseRows, storeSearch, brand, channel, subChannel, ranged, matches, keep]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -208,6 +209,8 @@ export default function PhantomStorePage() {
         </select>
       </div>
 
+      <DrillChips chips={chips(baseRows)} />
+
       {/* Table */}
       {fetching ? (
         <div className="text-center py-12 text-[var(--color-text-muted)]">Loading…</div>
@@ -218,7 +221,7 @@ export default function PhantomStorePage() {
           </p>
         </div>
       ) : level !== "detail" ? (
-        <RollUpTable rows={filtered} level={level} itemLabel="Phantom items" showSoh />
+        <RollUpTable rows={filtered} level={level} itemLabel="Phantom items" showSoh onDrill={onDrill} />
       ) : (
         <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
           <div className="overflow-x-auto max-h-[70vh]">

@@ -7,7 +7,7 @@ import { readJson } from "@/lib/blob";
 import { countryName, provinceName } from "@/lib/provinceScores";
 import type { ScorecardStore } from "@/lib/types";
 
-// Which countries and provinces the Province and Store Score Cards show (picked
+// Which countries and provinces the Province and Store Scorecards show (picked
 // in Control Centre). Each list: null = all shown.
 async function lists(slug: string) {
   const stores = await readJson<ScorecardStore[]>(`${slug}/data/stores.json`, []);

@@ -22,7 +22,7 @@ export default function StoreScorecardPage() {
       <ModuleGate moduleKey="store_scorecard">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-[var(--color-dark)]">
-            Store Score Card
+            Store Scorecard
           </h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
             Performance scores for individual stores

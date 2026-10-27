@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     }
 
     const config = await getTenantConfig(slug);
-    const tenantName = config?.name || "ARIA Score Card";
+    const tenantName = config?.name || "ARIA Scorecard";
 
     await sendWelcomeEmail({
       to: user.email,

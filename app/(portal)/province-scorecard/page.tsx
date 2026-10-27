@@ -15,7 +15,7 @@ function thisMonth(): string {
 }
 
 // Province scores are rolled up from the store data, so the page shares the
-// Store Score Card's module and permission. One filter bar drives both grids.
+// Store Scorecard's module and permission. One filter bar drives both grids.
 export default function ProvinceScorecardPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -77,7 +77,7 @@ export default function ProvinceScorecardPage() {
     <PermissionGate permission="view_store_scorecard">
       <ModuleGate moduleKey="store_scorecard">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[var(--color-dark)]">Province Score Card</h1>
+          <h1 className="text-2xl font-bold text-[var(--color-dark)]">Province Scorecard</h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
             Performance scores by province, and by channel within each province
           </p>

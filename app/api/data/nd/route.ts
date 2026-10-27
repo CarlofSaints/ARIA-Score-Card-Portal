@@ -3,6 +3,7 @@ import { requirePermission, handleAuthError, noCacheHeaders } from "@/lib/auth";
 import { getTenantSlug } from "@/lib/getTenantSlug";
 import { readJson } from "@/lib/blob";
 import type { NdDetailRow } from "@/lib/types";
+import { checkedPeriod } from "@/lib/period";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const now = new Date();
     const period =
-      searchParams.get("period") ||
+      checkedPeriod(searchParams.get("period")) ||
       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
     const rows = await readJson<NdDetailRow[]>(

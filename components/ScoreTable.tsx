@@ -7,6 +7,8 @@ import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { EntityScore } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
 import { useBarcodes } from "@/lib/useBarcodes";
+import Link from "next/link";
+import { drillHref } from "@/lib/drill";
 
 interface ScoreTableProps {
   type: "cam" | "channel" | "store" | "product" | "province";
@@ -342,6 +344,7 @@ export default function ScoreTable({ type, title, period: periodProp, query = ""
                     }
                     return (
                       <td key={kpi.key} className="text-center px-3 py-3">
+                        <DrillCell href={drillHref(kpi.key, type, s.entityId, isHistorical ? shown : undefined)} label={`${kpi.label} for ${s.entityName}`}>
                         <div className="text-xs font-semibold text-[var(--color-text)]">
                           {ks?.percent !== undefined ? `${ks.percent.toFixed(1)}%` : "—"}
                         </div>
@@ -353,6 +356,7 @@ export default function ScoreTable({ type, title, period: periodProp, query = ""
                         >
                           {ks ? `${ks.score.toFixed(1)} / ${ks.maxScore}` : "-"}
                         </span>
+                        </DrillCell>
                       </td>
                     );
                   })}
@@ -386,5 +390,16 @@ export default function ScoreTable({ type, title, period: periodProp, query = ""
         </>
       )}
     </div>
+  );
+}
+
+// A KPI score that opens its detail page filtered to this row (drill-down).
+function DrillCell({ href, label, children }: { href: string | null; label: string; children: React.ReactNode }) {
+  if (!href) return <>{children}</>;
+  return (
+    <Link href={href} title={`See the lines behind ${label}`} aria-label={`See the lines behind ${label}`}
+      className="block rounded-md px-1 py-0.5 hover:bg-[var(--color-bg)] hover:ring-1 hover:ring-[var(--color-primary)]">
+      {children}
+    </Link>
   );
 }

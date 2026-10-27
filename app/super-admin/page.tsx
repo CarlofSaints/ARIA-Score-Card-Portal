@@ -38,7 +38,7 @@ export default function SuperAdminDashboard() {
         <div className="flex items-center gap-3">
           <Image src="/aria-logo.png" alt="ARIA" width={32} height={32} />
           <div>
-            <h1 className="text-lg font-bold text-[#2D3748]">ARIA Score Card</h1>
+            <h1 className="text-lg font-bold text-[#2D3748]">ARIA Scorecard</h1>
             <p className="text-xs text-[#718096]">Platform Administration</p>
           </div>
         </div>

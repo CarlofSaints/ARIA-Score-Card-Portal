@@ -14,9 +14,9 @@ export interface Kam {
 // its channels AND its brands, so a row must match both — but brand is only
 // checked when the caller passes one (store/channel grain has no brand), and an
 // empty owned-list means "no restriction on that dimension".
-export function useKamFilter() {
+export function useKamFilter(initialKamId = "all") {
   const [kams, setKams] = useState<Kam[]>([]);
-  const [kamId, setKamId] = useState("all");
+  const [kamId, setKamId] = useState(initialKamId);
 
   useEffect(() => {
     authFetch("/api/kams")

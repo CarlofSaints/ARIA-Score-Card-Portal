@@ -41,9 +41,9 @@ const NAV_ITEMS: NavItem[] = [
     moduleKey: m.key as ModuleKey,
     permission: MODULE_PERMISSION[m.key as ModuleKey],
   })),
-  // Rolled up from store data, so it follows the Store Score Card's module + permission.
+  // Rolled up from store data, so it follows the Store Scorecard's module + permission.
   {
-    label: "Province Score Card",
+    label: "Province Scorecard",
     route: "/province-scorecard",
     icon: getModuleIcon("store_scorecard"),
     moduleKey: "store_scorecard",
@@ -97,7 +97,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
             <h1 className="text-sm font-bold text-[var(--color-dark)] truncate">
               {tenant.name}
             </h1>
-            <p className="text-xs text-[var(--color-text-muted)]">Score Card</p>
+            <p className="text-xs text-[var(--color-text-muted)]">Scorecard</p>
           </div>
         </div>
 

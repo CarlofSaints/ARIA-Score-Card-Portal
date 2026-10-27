@@ -22,7 +22,7 @@ export default function ChannelScorecardPage() {
       <ModuleGate moduleKey="channel_scorecard">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-[var(--color-dark)]">
-            Channel Score Card
+            Channel Scorecard
           </h1>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
             Performance scores for retail channels

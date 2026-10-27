@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       return Response.json(
         {
           slug,
-          name: "ARIA Score Card",
+          name: "ARIA Scorecard",
           primaryColor: "#3D6273",
           secondaryColor: "#5A8A9F",
           accentColor: "#E04E2A",
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
     );
   } catch {
     return Response.json(
-      { slug: "", name: "ARIA Score Card", enabledModules: [] },
+      { slug: "", name: "ARIA Scorecard", enabledModules: [] },
       { headers: noCacheHeaders() }
     );
   }
