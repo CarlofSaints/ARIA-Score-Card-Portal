@@ -155,6 +155,7 @@ export async function runSyncForTenant(
       channelName: st.Channel,
       subChannel: st.SubChannel || undefined,
       region: st.Province || undefined,
+      country: st.Country?.trim() || undefined,
       siteCode: String(st.SiteID),
     }));
     // Products — the product key is "Client Product ID" (no ID column).

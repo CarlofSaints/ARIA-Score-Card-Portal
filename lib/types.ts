@@ -149,6 +149,7 @@ export interface TenantConfig {
   ndRollingDays?: number; // Rolling scan window (days) for Numerical Distribution — SP @ScanRange (default 60)
   syncTimes?: string[]; // Local (SAST) hours to auto-sync, e.g. ["08:00","14:00"]
   includedProvinces?: string[]; // Province Score Card shows only these (unset = all)
+  includedCountries?: string[]; // Province + Store Score Cards show only these (unset = all)
   createdAt: string; // ISO
   updatedAt: string; // ISO
 }
@@ -240,6 +241,7 @@ export interface ScorecardStore {
   channelName: string;
   subChannel?: string; // CORP/HYPER/FRANCHISE/DC/DC-ONLINE… (from store master SubChannel)
   region?: string;
+  country?: string; // from GetClientRetailSites Country (blank on stores synced before 27 Oct)
   siteCode?: string; // SQL SiteCode (e.g. "PNP-HC14") — used to map SP rows keyed by SiteCode
 }
 

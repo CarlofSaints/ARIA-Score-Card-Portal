@@ -6,7 +6,7 @@ import { getKpiWeightings } from "@/lib/kpiData";
 import { getKpiScoring } from "@/lib/scoringData";
 import { buildEntityScore, pointsForValue, rankScores, salesGrowthPercent } from "@/lib/scoreEngine";
 import { scoreSalesTargets, type SalesHistory } from "@/lib/salesTargets";
-import { provinceGroups, provinceName } from "@/lib/provinceScores";
+import { provinceGroups, provinceName, storeShown } from "@/lib/provinceScores";
 import { getTenantConfig } from "@/lib/getTenantConfig";
 import type {
   ScorecardChannel,
@@ -154,9 +154,8 @@ export async function GET(
         readJson<NdDetailRow[]>(`${slug}/data/nd/${period}/detail.json`, []),
         getTenantConfig(slug),
       ]);
-      // Admin's province list (Control Centre): stores elsewhere are left out entirely.
-      const shown = tenantCfg?.includedProvinces;
-      const stores = shown?.length ? allStores.filter((s) => shown.includes(provinceName(s.region))) : allStores;
+      // Admin's country/province lists (Control Centre): stores elsewhere are left out entirely.
+      const stores = allStores.filter((s) => storeShown(s, tenantCfg));
       const ch = searchParams.getAll("ch");
       const prov = searchParams.getAll("prov");
       const sub = searchParams.getAll("sub");
@@ -198,12 +197,13 @@ export async function GET(
     } else if (type === "channel" || type === "store" || type === "product") {
       const entityFile =
         type === "channel" ? "channels" : type === "store" ? "stores" : "products";
-      const [entities, sales] = await Promise.all([
+      const [entities, sales, tenantCfg] = await Promise.all([
         readJson<(ScorecardChannel | ScorecardStore | ScorecardProduct)[]>(
           `${slug}/data/${type === "channel" ? "channels" : type === "store" ? "stores" : "products"}.json`,
           []
         ),
         readJson<SalesData[]>(`${slug}/data/sales/${period}/${entityFile}.json`, []),
+        type === "store" ? getTenantConfig(slug) : Promise.resolve(null),
       ]);
       const salesById = new Map(sales.map((s) => [s.entityId, s]));
 
@@ -227,7 +227,12 @@ export async function GET(
       };
 
       const inScope = entities.filter(
-        (e) => belongs(e) && (!channelQ || channelQ === "all" || (e as ScorecardStore).channelName === channelQ)
+        (e) =>
+          belongs(e) &&
+          (!channelQ || channelQ === "all" || (e as ScorecardStore).channelName === channelQ) &&
+          // Store rows follow the Control Centre country/province lists (rows only:
+          // target shares above still use the whole channel).
+          (type !== "store" || storeShown(e as ScorecardStore, tenantCfg))
       );
 
       // ND is row-driven off the ranging list, so an entity with no ranged SKUs
