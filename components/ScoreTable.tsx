@@ -63,7 +63,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   // KAM filter (server-side — EntityScore rows carry no channel/brand). Not shown
-  // on the CAM scorecard, which is already per-KAM.
+  // on the KAM scorecard, which is already per-KAM.
   const { kams, kamId, setKamId, selected: kam } = useKamFilter();
 
   // Channel filter (store scorecard only; server-side like the KAM filter).
@@ -142,10 +142,16 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     };
   }, [type, selected, kamId, channel]);
 
-  function valueFor(s: EntityScore, key: SortKey): number | string {
+  // KPI columns sort by points or by the underlying % (points can tie or mislead,
+  // e.g. two stores in the same bracket with very different OOS %).
+  const [sortBy, setSortBy] = useState<"score" | "percent">("score");
+
+  function valueFor(s: EntityScore, key: SortKey): number | string | null {
     if (key === "name") return s.entityName;
     if (key === "rank" || key === "total") return s.totalScore;
-    return s.kpiScores.find((k) => k.kpiKey === key)?.score ?? 0;
+    const ks = s.kpiScores.find((k) => k.kpiKey === key);
+    if (sortBy === "percent") return s.hasData === false || ks?.na ? null : ks?.percent ?? null;
+    return ks?.score ?? 0;
   }
 
   const withData = useMemo(() => scores.filter((s) => s.hasData !== false), [scores]);
@@ -156,11 +162,14 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     arr.sort((a, b) => {
       const av = valueFor(a, sortKey);
       const bv = valueFor(b, sortKey);
+      // No % (KPI not available) always sinks to the bottom, whichever direction.
+      if (av === null || bv === null) return av === bv ? 0 : av === null ? 1 : -1;
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
       return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
     });
     return arr;
-  }, [scores, sortKey, sortDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scores, sortKey, sortDir, sortBy]);
 
   function toggleSort(key: string) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -203,6 +212,15 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
               {channelOptions.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           )}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as "score" | "percent")}
+            title="What the KPI columns sort on when you click their header"
+            className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white"
+          >
+            <option value="score">Sort KPIs by points</option>
+            <option value="percent">Sort KPIs by %</option>
+          </select>
           <label className="text-xs text-[var(--color-text-muted)]">Month</label>
           <select
             value={selected}

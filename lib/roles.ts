@@ -7,10 +7,10 @@ export const ALL_PERMISSIONS: PermissionDef[] = [
   { key: "manage_clients", label: "Manage Clients", category: "admin" },
   { key: "manage_modules", label: "Manage Modules", category: "admin" },
   { key: "manage_kpis", label: "Manage KPIs", category: "admin" },
-  { key: "manage_cam_mapping", label: "Manage CAM Mapping", category: "admin" },
+  { key: "manage_cam_mapping", label: "Manage KAM Mapping", category: "admin" },
   // View
   { key: "view_dashboard", label: "View Dashboard", category: "view" },
-  { key: "view_cam_scorecard", label: "View CAM Scorecard", category: "view" },
+  { key: "view_cam_scorecard", label: "View KAM Scorecard", category: "view" },
   { key: "view_channel_scorecard", label: "View Channel Scorecard", category: "view" },
   { key: "view_store_scorecard", label: "View Store Scorecard", category: "view" },
   { key: "view_product_scorecard", label: "View Product Scorecard", category: "view" },
@@ -93,7 +93,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RolePermissions[] = [
 export const ROLE_LABELS: Record<UserRole, string> = {
   super_admin: "Super Admin",
   admin: "Admin",
-  cam: "CAM",
+  cam: "KAM",
   manager: "Manager",
   rep: "Rep",
 };

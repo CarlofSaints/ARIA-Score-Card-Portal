@@ -149,7 +149,7 @@ export default function SetupGuidePage() {
       </Step>
 
       <Step n={3} title="Add the users" by="KAM">
-        <p>Give every KAM the <b>CAM</b> role. Only CAM users can be picked in Step 4.</p>
+        <p>Give every KAM the <b>KAM</b> role. Only KAM users can be picked in Step 4.</p>
         <ol className="list-decimal pl-5 space-y-1">
           <li>In the left menu, click <Ui>Admin</Ui>, then <Ui>+ New User</Ui>.</li>
           <li>Fill in <Ui>Name</Ui>, <Ui>Email</Ui>, a temporary <Ui>Password</Ui> and the <Ui>Role</Ui>.</li>
@@ -159,14 +159,14 @@ export default function SetupGuidePage() {
           head={["Role", "Who gets it", "What they can do"]}
           rows={[
             [<b key="a">Admin</b>, "The KAM who runs this client", "Everything in this guide"],
-            [<b key="c">CAM</b>, "Each KAM", "Their own scorecard and the KPI pages"],
+            [<b key="c">KAM</b>, "Each KAM", "Their own scorecard and the KPI pages"],
             [<b key="m">Manager</b>, "Client managers", "View scorecards and KPI pages"],
             [<b key="r">Rep</b>, "Field reps", "View only what their role allows"],
           ]}
         />
         <Tip>
-          The Admin login isn&apos;t a CAM, so it can&apos;t have its own KAM scorecard. If the KAM running the client also
-          needs one, add them again with the CAM role, using a different email address.
+          The Admin login isn&apos;t a KAM, so it can&apos;t have its own KAM scorecard. If the KAM running the client also
+          needs one, add them again with the KAM role, using a different email address.
         </Tip>
       </Step>
 

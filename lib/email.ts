@@ -146,7 +146,7 @@ export async function sendWelcomeEmail(params: {
             <table style="width:100%;border-collapse:collapse;border:1px solid #E2E8F0;border-radius:8px;">
               ${moduleRows}
             </table>
-            <p style="font-size:12px;color:#A0AEC0;margin:8px 0 0;">Modules marked as "Not Included" can be activated — speak to your CAM for details.</p>
+            <p style="font-size:12px;color:#A0AEC0;margin:8px 0 0;">Modules marked as "Not Included" can be activated — speak to your KAM for details.</p>
           </div>
           ` : ""}
 
