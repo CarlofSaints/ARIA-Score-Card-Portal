@@ -262,9 +262,9 @@ export default function CamMappingPage() {
 
       {/* Mappings Table */}
       <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[70vh]">
           <table className="w-full text-sm">
-            <thead className="bg-[var(--color-bg)]">
+            <thead className="sticky top-0 bg-[var(--color-bg)] z-10">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">KAM</th>
                 <th className="text-left px-4 py-3 font-medium text-[var(--color-text-muted)]">Channels</th>

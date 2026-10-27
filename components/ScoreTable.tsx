@@ -271,12 +271,12 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
 
       {/* Score Table */}
       <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[70vh]">
           <table className="text-sm" style={{ tableLayout: "fixed", width: totalWidth(cols.map((c) => c.key)), minWidth: "100%" }}>
             <colgroup>
               {cols.map((c) => <col key={c.key} style={{ width: widths[c.key] }} />)}
             </colgroup>
-            <thead className="bg-[var(--color-bg)]">
+            <thead className="sticky top-0 bg-[var(--color-bg)] z-10">
               <tr className="text-[var(--color-text-muted)]">
                 {cols.map((c) => {
                   const kpi = KPI_DEFS.find((k) => k.key === c.key);

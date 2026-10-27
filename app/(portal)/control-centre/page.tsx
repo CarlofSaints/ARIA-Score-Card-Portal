@@ -893,9 +893,9 @@ export default function ControlCentrePage() {
                   {showLog ? "Hide history" : `History (${syncLog.length})`}
                 </button>
               </div>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-h-[70vh]">
                 <table className="text-xs w-full">
-                  <thead className="text-[var(--color-text-muted)] text-left">
+                  <thead className="sticky top-0 bg-white z-10 text-[var(--color-text-muted)] text-left">
                     <tr>
                       <th className="py-1 pr-4 font-medium">Query</th>
                       <th className="py-1 pr-4 font-medium text-right">Duration</th>
