@@ -41,6 +41,14 @@ const NAV_ITEMS: NavItem[] = [
     moduleKey: m.key as ModuleKey,
     permission: MODULE_PERMISSION[m.key as ModuleKey],
   })),
+  // Rolled up from store data, so it follows the Store Score Card's module + permission.
+  {
+    label: "Province Score Card",
+    route: "/province-scorecard",
+    icon: getModuleIcon("store_scorecard"),
+    moduleKey: "store_scorecard",
+    permission: "view_store_scorecard",
+  },
   { label: "Phantom Stock", route: "/phantom-store", icon: PhantomIcon, permission: "view_phantom" },
   { label: "Out of Stocks", route: "/oos", icon: OosIcon, permission: "view_oos" },
   { label: "Numerical Distribution", route: "/nd", icon: NdIcon, permission: "view_nd" },

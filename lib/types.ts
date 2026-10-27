@@ -265,7 +265,7 @@ export interface KpiScore {
 export interface EntityScore {
   entityId: string;
   entityName: string;
-  entityType: "cam" | "channel" | "store" | "product";
+  entityType: "cam" | "channel" | "store" | "product" | "province";
   period: string; // "YYYY-MM"
   kpiScores: KpiScore[];
   totalScore: number;
