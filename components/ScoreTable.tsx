@@ -17,7 +17,7 @@ interface ScoreTableProps {
   onData?: (data: { options?: { provinces: string[]; subChannels: string[] } }) => void;
 }
 
-function monthLabel(ym: string): string {
+export function monthLabel(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
   if (!y || !m) return ym;
   return new Date(y, m - 1, 1).toLocaleString("en-ZA", { month: "short", year: "numeric" });
@@ -189,7 +189,8 @@ export default function ScoreTable({ type, title, period: periodProp, query = ""
     }
   }
 
-  const isHistorical = !!selected && selected !== curPeriod;
+  const shown = controlled ? periodProp : selected;
+  const isHistorical = !!shown && shown !== curPeriod;
 
   return (
     <div>
@@ -197,8 +198,9 @@ export default function ScoreTable({ type, title, period: periodProp, query = ""
           progression / regression against the current month. */}
       <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
         <p className="text-sm text-[var(--color-text-muted)]">
-          {controlled ? `${title} scores` : isHistorical
-            ? `End-of-month snapshot for ${monthLabel(selected)} — compare against the current month.`
+          {controlled ? `${title} · ` : ""}
+          {isHistorical
+            ? `End-of-month snapshot for ${monthLabel(shown)} — compare against the current month.`
             : "Current month (updates on each sync)."}
         </p>
         <div className="flex items-center gap-2">

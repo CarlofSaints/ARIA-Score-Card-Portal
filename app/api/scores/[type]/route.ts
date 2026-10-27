@@ -169,6 +169,7 @@ export async function GET(
       scores = provinceGroups({
         by: searchParams.get("by") === "channel" ? "channel" : "province",
         stores: pool,
+        allStores: stores,
         sales: storeSales,
         ndRows,
         oos: oosData,

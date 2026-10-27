@@ -5,14 +5,13 @@ import { useRouter } from "next/navigation";
 import { useAuth, authFetch } from "@/lib/useAuth";
 import ModuleGate from "@/components/ModuleGate";
 import PermissionGate from "@/components/PermissionGate";
-import ScoreTable from "@/components/ScoreTable";
+import ScoreTable, { monthLabel } from "@/components/ScoreTable";
 import MultiFilter from "@/components/MultiFilter";
 import { useKamFilter } from "@/lib/useKamFilter";
 
-function monthLabel(ym: string): string {
-  const [y, m] = ym.split("-").map(Number);
-  if (!y || !m) return ym;
-  return new Date(y, m - 1, 1).toLocaleString("en-ZA", { month: "short", year: "numeric" });
+function thisMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 // Province scores are rolled up from the store data, so the page shares the
@@ -40,12 +39,14 @@ export default function ProvinceScorecardPage() {
     authFetch("/api/scores/periods")
       .then((r) => r.json())
       .then((d: { periods?: string[]; current?: string }) => {
-        const list = d.periods?.length ? d.periods : [d.current || ""];
+        const cur = d.current || thisMonth();
+        const list = d.periods?.length ? d.periods : [cur];
         setPeriods(list);
-        setCurrent(d.current || "");
-        setMonth(d.current || list[0]);
+        setCurrent(cur);
+        setMonth(cur);
       })
-      .catch(() => {});
+      // Month list unavailable: still show the current month.
+      .catch(() => { setPeriods([thisMonth()]); setCurrent(thisMonth()); setMonth(thisMonth()); });
     authFetch("/api/data/channels")
       .then((r) => r.json())
       .then((d) => setAllChannels(Array.isArray(d.channels) ? d.channels.map((c: { name: string }) => c.name).sort() : []))

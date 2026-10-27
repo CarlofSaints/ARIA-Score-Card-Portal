@@ -30,15 +30,19 @@ export interface ProvinceGroup {
 /**
  * Roll store-level KPI data up to provinces (by "province") or to channel ×
  * province (by "channel"). Sales and ND add up the underlying figures, so they
- * are exact. OOS is the plain average of the stores' OOS % (every store's OOS
- * denominator is the same product count, so the average is exact too).
- * shortcut: Phantom is the plain average of the stores' Phantom % (each store's
- * denominator is its ranged count, which the snapshot doesn't keep); store the
- * counts per store in the sync if provinces need it exact.
+ * are exact. OOS averages the store % over EVERY store in a channel that has
+ * OOS data (stores with no OOS lines count as 0%, as on the channel scorecard);
+ * every store's OOS denominator is the product count, so this is exact.
+ * Sales in "Set Rand Value Target" mode: provinces have no target, so they
+ * score YTD growth on the growth points table.
+ * shortcut: Phantom averages store % the same way, but each store's real
+ * denominator is its ranged count (not kept in the snapshot), so it is close,
+ * not exact; store per-store counts in the sync if provinces need it exact.
  */
 export function provinceGroups(opts: {
   by: "province" | "channel";
-  stores: ScorecardStore[];
+  stores: ScorecardStore[]; // after filters
+  allStores: ScorecardStore[]; // before filters: which channels carry each KPI
   sales: SalesData[]; // store level
   ndRows: NdDetailRow[]; // ND detail; store-level rows are used
   oos: Record<string, number>; // store id -> %
@@ -56,6 +60,13 @@ export function provinceGroups(opts: {
     g.stores.push(st);
     groups.set(id, g);
   }
+
+  // OOS/Phantom come per channel (PnP has them, SPAR not): a store counts when
+  // its channel has that KPI, even if the store itself had no lines (= 0%).
+  const channelsWith = (kpi: KpiKey) =>
+    new Set(opts.allStores.filter((s) => opts.covered(kpi, s.id)).map((s) => s.channelName));
+  const oosChannels = channelsWith("oos");
+  const phChannels = channelsWith("phantom_inventory");
 
   const avg = (vals: number[]) => (vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null);
   const out: ProvinceGroup[] = [];
@@ -85,8 +96,8 @@ export function provinceGroups(opts: {
       ranged += r?.totalCount || 0;
     }
 
-    const oosStores = has("oos").filter((s) => s.id in opts.oos);
-    const phStores = has("phantom_inventory").filter((s) => s.id in opts.phantom);
+    const oosStores = g.stores.filter((s) => oosChannels.has(s.channelName) && s.id in opts.oos);
+    const phStores = g.stores.filter((s) => phChannels.has(s.channelName) && s.id in opts.phantom);
     out.push({
       id,
       name: g.name,
