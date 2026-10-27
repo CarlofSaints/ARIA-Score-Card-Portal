@@ -8,13 +8,15 @@ import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { OosDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
 import RollUpTable, { LevelSelect, type RollLevel } from "@/components/RollUpTable";
+import { useBarcodes } from "@/lib/useBarcodes";
 
-type SortKey = "storeName" | "subChannel" | "brand" | "productName";
+type SortKey = "storeName" | "subChannel" | "brand" | "productName" | "barcode";
 
 const COLS: { key: SortKey; label: string; width: number }[] = [
   { key: "storeName", label: "Store", width: 240 },
   { key: "subChannel", label: "Sub-Channel", width: 150 },
   { key: "productName", label: "Product", width: 320 },
+  { key: "barcode", label: "Barcode", width: 150 },
   { key: "brand", label: "Brand", width: 160 },
 ];
 
@@ -30,6 +32,7 @@ export default function OosPage() {
   const [brand, setBrand] = useState("all");
   const [channel, setChannel] = useState("all");
   const [level, setLevel] = useState<RollLevel>("channel");
+  const barcodes = useBarcodes();
   const { kams, kamId, setKamId, matches } = useKamFilter();
   const [sortKey, setSortKey] = useState<SortKey>("storeName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -56,8 +59,11 @@ export default function OosPage() {
 
   // DC-ONLINE is excluded entirely from OOS; DC is split into its own grid.
   const baseRows = useMemo(
-    () => rows.filter((r) => (r.subChannel || "").toUpperCase() !== "DC-ONLINE"),
-    [rows]
+    () =>
+      rows
+        .filter((r) => (r.subChannel || "").toUpperCase() !== "DC-ONLINE")
+        .map((r) => ({ ...r, barcode: barcodes[r.productId] })),
+    [rows, barcodes]
   );
 
   const brands = useMemo(
@@ -72,7 +78,7 @@ export default function OosPage() {
   const filtered = useMemo(() => {
     const q = storeSearch.trim().toLowerCase();
     return baseRows.filter((r) => {
-      if (q && !`${r.storeName} ${r.siteCode} ${r.productName} ${r.productId}`.toLowerCase().includes(q)) return false;
+      if (q && !`${r.storeName} ${r.siteCode} ${r.productName} ${r.productId} ${r.barcode ?? ""}`.toLowerCase().includes(q)) return false;
       if (brand !== "all" && r.brand !== brand) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
       if (!matches(r.channelName, r.brand)) return false;
@@ -135,7 +141,7 @@ export default function OosPage() {
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search store / product…"
+          placeholder="Search store / product / barcode…"
           value={storeSearch}
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
@@ -233,6 +239,7 @@ function Grid({
                 </td>
                 <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.subChannel || "—"}</td>
                 <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.productName}</td>
+                <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.barcode || "—"}</td>
                 <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.brand || "—"}</td>
               </tr>
             ))}

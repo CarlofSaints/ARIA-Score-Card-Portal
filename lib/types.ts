@@ -388,6 +388,7 @@ export interface PhantomDetailRow {
   soh: number;
   date: string; // snapshot date (ISO)
   dateLastSold: string | null; // from SP "Date Last Sold"; null if absent
+  barcode?: string; // filled on the page from data/barcodes.json
 }
 
 // ── OOS / ND / Sales detail rows ──
@@ -408,6 +409,7 @@ export interface OosDetailRow {
   brand: string;
   soh: number;
   date: string; // latest snapshot date (ISO); "" if absent
+  barcode?: string; // filled on the page from data/barcodes.json
 }
 
 export interface NdDetailRow {

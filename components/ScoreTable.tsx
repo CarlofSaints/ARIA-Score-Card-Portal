@@ -6,6 +6,7 @@ import { KPI_DEFS } from "@/lib/modules";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { EntityScore } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
+import { useBarcodes } from "@/lib/useBarcodes";
 
 interface ScoreTableProps {
   type: "cam" | "channel" | "store" | "product" | "province";
@@ -88,13 +89,16 @@ export default function ScoreTable({ type, title, period: periodProp, query = ""
     [channels, kam]
   );
 
+  // Product rows are SKUs (entityId = SKU): show their barcode beside the name.
+  const barcodes = useBarcodes(type === "product");
   const cols = useMemo(
     () => [
       ...FIXED_COLS,
+      ...(type === "product" ? [{ key: "barcode", label: "Barcode", width: 150, align: "left" as const }] : []),
       ...KPI_DEFS.map((k) => ({ key: k.key, label: k.shortLabel, width: 130, align: "center" as const })),
       { key: "total", label: "Total", width: 130, align: "center" as const },
     ],
-    []
+    [type]
   );
 
   const { widths, startResize, totalWidth } = useColumnWidths(
@@ -158,6 +162,7 @@ export default function ScoreTable({ type, title, period: periodProp, query = ""
 
   function valueFor(s: EntityScore, key: SortKey): number | string | null {
     if (key === "name") return s.entityName;
+    if (key === "barcode") return barcodes[s.entityId] ?? "";
     if (key === "rank" || key === "total") return s.totalScore;
     const ks = s.kpiScores.find((k) => k.kpiKey === key);
     if (sortBy === "percent") return s.hasData === false || ks?.na ? null : ks?.percent ?? null;
@@ -179,7 +184,7 @@ export default function ScoreTable({ type, title, period: periodProp, query = ""
     });
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scores, sortKey, sortDir, sortBy]);
+  }, [scores, sortKey, sortDir, sortBy, barcodes]);
 
   function toggleSort(key: string) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -323,6 +328,9 @@ export default function ScoreTable({ type, title, period: periodProp, query = ""
                 <tr key={s.entityId} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]/50">
                   <td className="px-4 py-3 text-[var(--color-text-muted)] font-mono">{s.rank}</td>
                   <td className="px-4 py-3 font-medium text-[var(--color-text)] truncate">{s.entityName}</td>
+                  {type === "product" && (
+                    <td className="px-4 py-3 text-[var(--color-text)] truncate">{barcodes[s.entityId] || "—"}</td>
+                  )}
                   {KPI_DEFS.map((kpi) => {
                     const ks = s.kpiScores.find((k) => k.kpiKey === kpi.key);
                     if (s.hasData === false || ks?.na) {

@@ -7,22 +7,23 @@ import PermissionGate from "@/components/PermissionGate";
 import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { SalesDetailRow, MonthSales } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
+import { useBarcodes } from "@/lib/useBarcodes";
 
 // Granularity. "detail" = store×SKU combos; the rest are the rolled-up aggregates.
 type Level = "detail" | "channel" | "store" | "product";
-type ColKey = "channel" | "store" | "product" | "value" | "units" | "prev" | "growth";
+type ColKey = "channel" | "store" | "product" | "barcode" | "value" | "units" | "prev" | "growth";
 
 // Name columns shown per level (figures are always appended). Picking a level
 // both re-aggregates the rows and swaps which name columns appear.
 const NAME_COLS: Record<Level, ColKey[]> = {
   channel: ["channel"],
   store: ["channel", "store"],
-  product: ["product"],
-  detail: ["channel", "store", "product"],
+  product: ["product", "barcode"],
+  detail: ["channel", "store", "product", "barcode"],
 };
 const VALUE_COLS: ColKey[] = ["value", "units", "prev", "growth"];
 const COL_WIDTH: Record<ColKey, number> = {
-  channel: 160, store: 260, product: 280, value: 150, units: 120, prev: 150, growth: 110,
+  channel: 160, store: 260, product: 280, barcode: 150, value: 150, units: 120, prev: 150, growth: 110,
 };
 const RIGHT = new Set<ColKey>(["value", "units", "prev", "growth"]);
 
@@ -50,6 +51,7 @@ export default function SalesPage() {
   const [channel, setChannel] = useState("all");
   const [level, setLevel] = useState<Level>("store");
   const { kams, kamId, setKamId, matches } = useKamFilter();
+  const barcodes = useBarcodes();
   const [sortKey, setSortKey] = useState<ColKey>("value");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -118,7 +120,7 @@ export default function SalesPage() {
   );
 
   const rowText = (r: SalesDetailRow) =>
-    [r.channelName, r.storeName, r.productName, r.productId, r.siteCode].filter(Boolean).join(" ");
+    [r.channelName, r.storeName, r.productName, r.productId, barcodes[r.productId], r.siteCode].filter(Boolean).join(" ");
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -133,7 +135,8 @@ export default function SalesPage() {
       if (view !== "ytd" && !r.months?.[view]) return false;
       return true;
     });
-  }, [baseRows, search, channel, level, matches, view]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseRows, search, channel, level, matches, view, barcodes]);
 
   const maxDates = useMemo(
     () => Array.from(new Set(filtered.map((r) => r.maxDate).filter(Boolean))).sort() as string[],
@@ -159,6 +162,7 @@ export default function SalesPage() {
       case "channel": return r.channelName;
       case "store": return r.storeName || r.siteCode;
       case "product": return r.productName || r.productId;
+      case "barcode": return barcodes[r.productId] || "";
       case "value": return val(r);
       case "units": return units(r);
       case "prev": return prev(r);
@@ -178,7 +182,7 @@ export default function SalesPage() {
     });
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, sortKey, sortDir, view]);
+  }, [filtered, sortKey, sortDir, view, barcodes]);
 
   // Each level is a single grain, so the headline is just its sum — no double-count.
   const totals = useMemo(() => {
@@ -192,7 +196,7 @@ export default function SalesPage() {
   function toggleSort(key: string) {
     const k = key as ColKey;
     if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(k); setSortDir(k === "channel" || k === "store" || k === "product" ? "asc" : "desc"); }
+    else { setSortKey(k); setSortDir(k === "channel" || k === "store" || k === "product" || k === "barcode" ? "asc" : "desc"); }
   }
 
   const liveSuffix = selectedLive ? " (to date)" : "";
@@ -211,6 +215,7 @@ export default function SalesPage() {
       case "channel": return "Channel";
       case "store": return "Store";
       case "product": return "Product";
+      case "barcode": return "Barcode";
       case "value": return valLabel;
       case "units": return unitsLabel;
       case "prev": return prevLabel;
@@ -223,6 +228,7 @@ export default function SalesPage() {
       case "channel": return r.channelName || "—";
       case "store": return r.storeName || r.siteCode || "—";
       case "product": return r.productName || r.productId || "—";
+      case "barcode": return barcodes[r.productId] || "—";
       case "value": return rand(val(r));
       case "units": return (units(r) || 0).toLocaleString("en-ZA");
       case "prev": return rand(prev(r));
@@ -289,7 +295,7 @@ export default function SalesPage() {
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search channel / store / product…"
+          placeholder="Search channel / store / product / barcode…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"

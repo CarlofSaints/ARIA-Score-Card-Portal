@@ -8,12 +8,14 @@ import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { NdDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
 import { LevelSelect } from "@/components/RollUpTable";
+import { useBarcodes } from "@/lib/useBarcodes";
 
 type Level = NdDetailRow["level"];
-type SortKey = "name" | "channelName" | "subChannel" | "brand" | "ndPercent" | "rangedCount" | "totalCount";
+type SortKey = "name" | "barcode" | "channelName" | "subChannel" | "brand" | "ndPercent" | "rangedCount" | "totalCount";
 
 const COLS: { key: SortKey; label: string; width: number; align?: "right" | "center"; sortable?: boolean }[] = [
   { key: "name", label: "Name", width: 300 },
+  { key: "barcode", label: "Barcode", width: 150 },
   { key: "channelName", label: "Channel", width: 120 },
   { key: "subChannel", label: "Sub-Channel", width: 140 },
   { key: "brand", label: "Brand", width: 150 },
@@ -26,7 +28,7 @@ const COLS: { key: SortKey; label: string; width: number; align?: "right" | "cen
 const LEVEL_COLS: Record<Level, SortKey[]> = {
   channel: ["name", "rangedCount", "totalCount", "ndPercent"],
   store: ["name", "channelName", "subChannel", "rangedCount", "totalCount", "ndPercent"],
-  product: ["name", "brand", "rangedCount", "totalCount", "ndPercent"],
+  product: ["name", "barcode", "brand", "rangedCount", "totalCount", "ndPercent"],
 };
 
 function entityName(r: NdDetailRow): string {
@@ -47,6 +49,7 @@ export default function NdPage() {
   const [channel, setChannel] = useState("all");
   const [brand, setBrand] = useState("all");
   const [level, setLevel] = useState<Level>("channel");
+  const barcodes = useBarcodes();
   const { kams, kamId, setKamId, matches } = useKamFilter();
   const [sortKey, setSortKey] = useState<SortKey>("ndPercent");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -93,10 +96,10 @@ export default function NdPage() {
       if (channel !== "all" && r.channelName && r.channelName !== channel) return false;
       if (brand !== "all" && r.brand && r.brand !== brand) return false;
       if (!matches(r.channelName || undefined, r.brand || undefined)) return false;
-      if (q && !entityName(r).toLowerCase().includes(q)) return false;
+      if (q && !`${entityName(r)} ${r.productId} ${barcodes[r.productId] ?? ""}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [baseRows, search, channel, brand, matches]);
+  }, [baseRows, search, channel, brand, matches, barcodes]);
 
   // A sort column hidden by the current grain falls back to ND %.
   const activeSort: SortKey = LEVEL_COLS[level].includes(sortKey) ? sortKey : "ndPercent";
@@ -106,12 +109,13 @@ export default function NdPage() {
     return (arr: NdDetailRow[]) =>
       [...arr].sort((a, b) => {
         if (sortKey === "name") return entityName(a).localeCompare(entityName(b)) * dir;
+        if (sortKey === "barcode") return (barcodes[a.productId] ?? "").localeCompare(barcodes[b.productId] ?? "") * dir;
         const av = a[sortKey];
         const bv = b[sortKey];
         if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
         return String(av ?? "").localeCompare(String(bv ?? "")) * dir;
       });
-  }, [activeSort, sortDir]);
+  }, [activeSort, sortDir, barcodes]);
 
   // DC store rows are split into their own grid below the main one.
   const mainRows = useMemo(
@@ -154,7 +158,7 @@ export default function NdPage() {
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search store / product…"
+          placeholder="Search store / product / barcode…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
@@ -185,11 +189,11 @@ export default function NdPage() {
         </div>
       ) : (
         <>
-          <Grid rows={mainRows} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
+          <Grid rows={mainRows} barcodes={barcodes} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
           {dcRows.length > 0 && (
             <div className="mt-8">
               <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">Distribution Centres (DC)</h2>
-              <Grid rows={dcRows} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
+              <Grid rows={dcRows} barcodes={barcodes} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
             </div>
           )}
         </>
@@ -199,9 +203,10 @@ export default function NdPage() {
 }
 
 function Grid({
-  rows, cols, widths, startResize, totalWidth, sortKey, sortDir, onSort,
+  rows, barcodes, cols, widths, startResize, totalWidth, sortKey, sortDir, onSort,
 }: {
   rows: NdDetailRow[];
+  barcodes: Record<string, string>;
   cols: typeof COLS;
   widths: Record<string, number>;
   startResize: (k: string) => (e: React.MouseEvent) => void;
@@ -230,7 +235,7 @@ function Grid({
           <tbody>
             {rows.map((r, i) => (
               <tr key={`${r.level}|${entityName(r)}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
-                {cols.map((c) => <td key={c.key} className={`px-3 py-2 text-[var(--color-text)] ${c.align === "right" ? "text-right" : "truncate"}${c.key === "name" || c.key === "ndPercent" ? " font-medium" : ""}`}>{cell(c.key, r)}</td>)}
+                {cols.map((c) => <td key={c.key} className={`px-3 py-2 text-[var(--color-text)] ${c.align === "right" ? "text-right" : "truncate"}${c.key === "name" || c.key === "ndPercent" ? " font-medium" : ""}`}>{cell(c.key, r, barcodes)}</td>)}
               </tr>
             ))}
           </tbody>
@@ -243,9 +248,10 @@ function Grid({
   );
 }
 
-function cell(key: SortKey, r: NdDetailRow): string {
+function cell(key: SortKey, r: NdDetailRow, barcodes: Record<string, string>): string {
   switch (key) {
     case "name": return entityName(r);
+    case "barcode": return barcodes[r.productId] || "—";
     case "rangedCount": return r.rangedCount?.toLocaleString() ?? "—";
     case "totalCount": return r.totalCount?.toLocaleString() ?? "—";
     case "ndPercent": return r.ndPercent != null ? `${r.ndPercent}%` : "—";

@@ -132,6 +132,7 @@ export async function runSyncForTenant(
   // When "core" is requested we re-pull + rewrite them; otherwise we reuse the
   // last-synced copies from blob (a KPI-only sync shouldn't re-pull master data).
   let channels: ScorecardChannel[] = [];
+  let productMasterRows: Record<string, unknown>[] = []; // raw, for the barcode scan below
   let stores: ScorecardStore[] = [];
   let products: ScorecardProduct[] = [];
   let brands: string[] = [];
@@ -159,6 +160,7 @@ export async function runSyncForTenant(
       siteCode: String(st.SiteID),
     }));
     // Products — the product key is "Client Product ID" (no ID column).
+    productMasterRows = productsRes.data as unknown as Record<string, unknown>[];
     products = productsRes.data.map((p) => ({
       id: p["Client Product ID"],
       name: p["Product Description"] || p["Client Product ID"],
@@ -1165,6 +1167,33 @@ export async function runSyncForTenant(
   const writes = [
     writeJson(`${slug}/data/kpi/${period}/coverage.json`, coverage),
   ];
+
+  // Barcodes: "Product Barcode EA" from whichever SP returns it, keyed by SKU.
+  // Own file, merged over the last one, so a partial sync never drops any. The
+  // product master is applied LAST so it wins over a KPI row's barcode.
+  // shortcut: a numeric SQL column loses leading zeros here; ask for it as text
+  // if UPC/EAN-8 codes ever show up short.
+  const barcodesKey = `${slug}/data/barcodes.json`;
+  const barcodes = await readJson<Record<string, string>>(barcodesKey, {});
+  let barcodeRows = 0;
+  const barcodeSources: [Record<string, unknown>[], string][] = [
+    [salesRes.data as unknown as Record<string, unknown>[], "Product ID"],
+    [ndRes.data as unknown as Record<string, unknown>[], "Product ID"],
+    [oosRes.data as unknown as Record<string, unknown>[], "Product ID"],
+    [phantomRes.data as unknown as Record<string, unknown>[], "Product ID"],
+    [productMasterRows, "Client Product ID"],
+  ];
+  for (const [rows, skuCol] of barcodeSources) {
+    for (const r of rows) {
+      const sku = String(r[skuCol] ?? "").trim();
+      const bc = String(r["Product Barcode EA"] ?? "").trim();
+      if (sku && bc) {
+        barcodes[sku] = bc;
+        barcodeRows++;
+      }
+    }
+  }
+  if (barcodeRows) writes.push(writeJson(barcodesKey, barcodes));
   if (coreFetched) {
     writes.push(
       writeJson(`${slug}/data/channels.json`, channels),

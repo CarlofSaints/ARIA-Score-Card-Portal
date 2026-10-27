@@ -16,6 +16,7 @@ export interface RollRow {
   productName: string;
   brand: string;
   soh?: number; // Phantom only: summed per group
+  barcode?: string;
 }
 
 interface Agg {
@@ -30,17 +31,18 @@ interface Agg {
   stores: number;
   products: number;
   soh: number;
+  barcode?: string; // product level
 }
 
-type ColKey = "channelName" | "storeName" | "subChannel" | "productName" | "brand" | "items" | "soh" | "stores" | "products";
+type ColKey = "channelName" | "storeName" | "subChannel" | "productName" | "barcode" | "brand" | "items" | "soh" | "stores" | "products";
 
 const NAME_COLS: Record<Exclude<RollLevel, "detail">, ColKey[]> = {
   channel: ["channelName", "items", "stores", "products"],
   store: ["storeName", "channelName", "subChannel", "items", "products"],
-  product: ["productName", "brand", "items", "stores"],
+  product: ["productName", "barcode", "brand", "items", "stores"],
 };
 const WIDTH: Record<ColKey, number> = {
-  channelName: 160, storeName: 260, subChannel: 140, productName: 320, brand: 160, items: 110, soh: 110, stores: 130, products: 140,
+  channelName: 160, storeName: 260, subChannel: 140, productName: 320, barcode: 150, brand: 160, items: 110, soh: 110, stores: 130, products: 140,
 };
 const NUM = new Set<ColKey>(["items", "soh", "stores", "products"]);
 
@@ -53,7 +55,7 @@ export function rollUp(rows: RollRow[], level: Exclude<RollLevel, "detail">): Ag
       g = {
         agg: {
           key, channelName: r.channelName, storeName: r.storeName, siteCode: r.siteCode,
-          subChannel: r.subChannel, productName: r.productName, brand: r.brand, items: 0, stores: 0, products: 0, soh: 0,
+          subChannel: r.subChannel, productName: r.productName, brand: r.brand, barcode: r.barcode, items: 0, stores: 0, products: 0, soh: 0,
         },
         stores: new Set(),
         products: new Set(),
@@ -102,7 +104,7 @@ export default function RollUpTable({ rows, level, itemLabel, showSoh = false }:
   }, [groups, activeSort, sortDir]);
 
   const label = (c: ColKey) =>
-    ({ channelName: "Channel", storeName: "Store", subChannel: "Sub-Channel", productName: "Product", brand: "Brand", items: itemLabel, soh: "SOH", stores: "Stores affected", products: "Products affected" })[c];
+    ({ channelName: "Channel", storeName: "Store", subChannel: "Sub-Channel", productName: "Product", barcode: "Barcode", brand: "Brand", items: itemLabel, soh: "SOH", stores: "Stores affected", products: "Products affected" })[c];
 
   function toggleSort(key: string) {
     const k = key as ColKey;
