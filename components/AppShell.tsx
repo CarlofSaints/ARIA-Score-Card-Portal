@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Sidebar from "./Sidebar";
+import LastUpdated from "./LastUpdated";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -35,11 +36,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <span className="text-sm font-semibold text-[var(--color-dark)]">
           ARIA Scorecard
         </span>
+        <LastUpdated className="ml-auto text-right" />
       </header>
 
       {/* Main content */}
       <main className="lg:ml-64 min-h-screen">
-        <div className="p-6 max-w-7xl mx-auto">{children}</div>
+        <div className="p-6 max-w-7xl mx-auto">
+          {/* Desktop: top-right on every page (the mobile header shows it instead). */}
+          <div className="hidden lg:flex justify-end -mt-2 mb-2">
+            <LastUpdated />
+          </div>
+          {children}
+        </div>
       </main>
     </div>
   );
