@@ -8,8 +8,13 @@ import type { EntityScore } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
 
 interface ScoreTableProps {
-  type: "cam" | "channel" | "store" | "product";
+  type: "cam" | "channel" | "store" | "product" | "province";
   title: string;
+  // Set by a page that owns the month + filters (Province page): the table then
+  // hides its own month/KAM/channel pickers and appends `query` to the fetch.
+  period?: string;
+  query?: string;
+  onData?: (data: { options?: { provinces: string[]; subChannels: string[] } }) => void;
 }
 
 function monthLabel(ym: string): string {
@@ -48,7 +53,8 @@ const FIXED_COLS = [
   { key: "name", label: "Name", width: 240, align: "left" as const },
 ];
 
-export default function ScoreTable({ type, title }: ScoreTableProps) {
+export default function ScoreTable({ type, title, period: periodProp, query = "", onData }: ScoreTableProps) {
+  const controlled = periodProp !== undefined;
   const [scores, setScores] = useState<EntityScore[]>([]);
   const [period, setPeriod] = useState("");
   const [loading, setLoading] = useState(true);
@@ -97,6 +103,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
 
   // Load the available month snapshots once, then default to the current month.
   useEffect(() => {
+    if (controlled) return;
     let alive = true;
     authFetch(`/api/scores/periods`)
       .then((r) => r.json())
@@ -116,22 +123,24 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [controlled]);
 
   // Fetch scores for the selected month. Runs once the period is resolved and
   // again whenever the month (or scorecard type) changes.
   useEffect(() => {
-    if (!selected) return;
+    const month = controlled ? periodProp : selected;
+    if (!month) return;
     setLoading(true);
     let alive = true;
     const camQ = kamId !== "all" ? `&cam=${encodeURIComponent(kamId)}` : "";
     const chQ = channel !== "all" ? `&channel=${encodeURIComponent(channel)}` : "";
-    authFetch(`/api/scores/${type}?period=${selected}${camQ}${chQ}`)
+    authFetch(`/api/scores/${type}?period=${month}${controlled ? query : camQ + chQ}`)
       .then((r) => r.json())
       .then((data) => {
         if (!alive) return;
         setScores(data.scores || []);
         setPeriod(data.period || "");
+        onData?.(data);
       })
       .catch(() => {})
       .finally(() => {
@@ -140,7 +149,8 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
     return () => {
       alive = false;
     };
-  }, [type, selected, kamId, channel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, selected, kamId, channel, controlled, periodProp, query]);
 
   // KPI columns sort by points or by the underlying % (points can tie or mislead,
   // e.g. two stores in the same bracket with very different OOS %).
@@ -187,12 +197,12 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
           progression / regression against the current month. */}
       <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
         <p className="text-sm text-[var(--color-text-muted)]">
-          {isHistorical
+          {controlled ? `${title} scores` : isHistorical
             ? `End-of-month snapshot for ${monthLabel(selected)} — compare against the current month.`
             : "Current month (updates on each sync)."}
         </p>
         <div className="flex items-center gap-2">
-          {type !== "cam" && (
+          {type !== "cam" && !controlled && (
             <select
               value={kamId}
               onChange={(e) => { setKamId(e.target.value); setChannel("all"); }}
@@ -221,6 +231,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
             <option value="score">Sort KPIs by points</option>
             <option value="percent">Sort KPIs by %</option>
           </select>
+          {!controlled && <>
           <label className="text-xs text-[var(--color-text-muted)]">Month</label>
           <select
             value={selected}
@@ -234,6 +245,7 @@ export default function ScoreTable({ type, title }: ScoreTableProps) {
               </option>
             ))}
           </select>
+          </>}
         </div>
       </div>
 

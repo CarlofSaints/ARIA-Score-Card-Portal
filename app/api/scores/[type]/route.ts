@@ -6,6 +6,7 @@ import { getKpiWeightings } from "@/lib/kpiData";
 import { getKpiScoring } from "@/lib/scoringData";
 import { buildEntityScore, pointsForValue, rankScores, salesGrowthPercent } from "@/lib/scoreEngine";
 import { scoreSalesTargets, type SalesHistory } from "@/lib/salesTargets";
+import { provinceGroups, provinceName } from "@/lib/provinceScores";
 import type {
   ScorecardChannel,
   ScorecardStore,
@@ -16,15 +17,18 @@ import type {
   KpiKey,
   SalesGrowthMetric,
   PermissionKey,
+  NdDetailRow,
 } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-type ScoreType = "cam" | "channel" | "store" | "product";
+type ScoreType = "cam" | "channel" | "store" | "product" | "province";
 
 // Same permission each scorecard page's PermissionGate uses.
 const VIEW_PERMS: Record<ScoreType, PermissionKey> = {
   cam: "view_cam_scorecard",
+  // Province scores are rolled up from store data, so they share its permission.
+  province: "view_store_scorecard",
   channel: "view_channel_scorecard",
   store: "view_store_scorecard",
   product: "view_product_scorecard",
@@ -81,7 +85,7 @@ export async function GET(
     };
 
     // KPI percentage blobs are stored per level. KAM derives from channel data.
-    const lvl = type === "cam" ? "channel" : type;
+    const lvl = type === "cam" ? "channel" : type === "province" ? "store" : type;
     type CoverSet = { channels: string[]; stores: string[]; products: string[] };
     type Coverage = { sales?: CoverSet; nd?: CoverSet; oos?: CoverSet; phantom?: CoverSet };
     const [oosData, ndData, phantomData, coverage] = await Promise.all([
@@ -96,7 +100,7 @@ export async function GET(
     // per-KPI coverage is recorded yet (pre-resync), treat everything as present
     // so behaviour is unchanged until the next sync writes the new coverage.
     const entityField: keyof CoverSet =
-      type === "product" ? "products" : type === "store" ? "stores" : "channels";
+      type === "product" ? "products" : type === "store" || type === "province" ? "stores" : "channels";
     const covSet = (src?: CoverSet) => new Set(src?.[entityField] ?? []);
     const cov: Record<KpiKey, Set<string>> = {
       sales_growth: covSet(coverage.sales),
@@ -138,8 +142,54 @@ export async function GET(
     };
 
     let scores: EntityScore[] = [];
+    let options: { provinces: string[]; subChannels: string[] } | undefined;
 
-    if (type === "channel" || type === "store" || type === "product") {
+    if (type === "province") {
+      // Province grid (?by=province) or channel × province grid (?by=channel).
+      // Filters repeat: &ch=PnP&ch=SPAR, &prov=Gauteng, &sub=CORP.
+      const [stores, storeSales, ndRows] = await Promise.all([
+        readJson<ScorecardStore[]>(`${slug}/data/stores.json`, []),
+        readJson<SalesData[]>(`${slug}/data/sales/${period}/stores.json`, []),
+        readJson<NdDetailRow[]>(`${slug}/data/nd/${period}/detail.json`, []),
+      ]);
+      const ch = searchParams.getAll("ch");
+      const prov = searchParams.getAll("prov");
+      const sub = searchParams.getAll("sub");
+      const pool = stores.filter(
+        (st) =>
+          (!camMapping || !camMapping.channelIds.length || camMapping.channelIds.includes(st.channelName)) &&
+          (!ch.length || ch.includes(st.channelName)) &&
+          (!sub.length || sub.includes(st.subChannel ?? "")) &&
+          (!prov.length || prov.includes(provinceName(st.region)))
+      );
+      options = {
+        provinces: Array.from(new Set(stores.map((s) => provinceName(s.region)))).sort(),
+        subChannels: Array.from(new Set(stores.map((s) => s.subChannel).filter((s): s is string => !!s))).sort(),
+      };
+      scores = provinceGroups({
+        by: searchParams.get("by") === "channel" ? "channel" : "province",
+        stores: pool,
+        sales: storeSales,
+        ndRows,
+        oos: oosData,
+        phantom: phantomData,
+        covered: (kpi, id) => presentFor(kpi, id),
+        metric,
+      }).map((g) => {
+        const score = buildEntityScore({
+          entityId: g.id,
+          entityName: g.name,
+          entityType: "province",
+          period,
+          percents: g.percents,
+          weightings,
+          scoring,
+          present: g.present,
+        });
+        score.hasData = KPI_KEYS.some((k) => g.present[k]);
+        return score;
+      });
+    } else if (type === "channel" || type === "store" || type === "product") {
       const entityFile =
         type === "channel" ? "channels" : type === "store" ? "stores" : "products";
       const [entities, sales] = await Promise.all([
@@ -299,7 +349,7 @@ export async function GET(
 
     const ranked = rankScores(scores);
     return Response.json(
-      { scores: ranked, period },
+      { scores: ranked, period, options },
       { headers: noCacheHeaders() }
     );
   } catch (err) {
