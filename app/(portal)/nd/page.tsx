@@ -10,7 +10,8 @@ import { useKamFilter } from "@/lib/useKamFilter";
 import { LevelSelect } from "@/components/RollUpTable";
 import { useBarcodes } from "@/lib/useBarcodes";
 import { readDrillParams } from "@/lib/drill";
-import DrillChips, { clearPeriod, type DrillChip } from "@/components/DrillChips";
+import DrillChips, { type DrillChip } from "@/components/DrillChips";
+import MonthSelect from "@/components/MonthSelect";
 
 type Level = NdDetailRow["level"];
 type SortKey = "name" | "barcode" | "channelName" | "subChannel" | "brand" | "ndPercent" | "rangedCount" | "totalCount";
@@ -50,6 +51,7 @@ export default function NdPage() {
   const [search, setSearch] = useState("");
   // Drill-down: a scorecard link can preset the level, channel, store, product, KAM, month.
   const [drill] = useState(readDrillParams);
+  const [month, setMonth] = useState(drill.period ?? ""); // "" = current month
   const [channel, setChannel] = useState(drill.channel ?? "all");
   const [brand, setBrand] = useState("all");
   const [level, setLevel] = useState<Level>(
@@ -72,7 +74,7 @@ export default function NdPage() {
 
   useEffect(() => {
     if (!user) return;
-    authFetch(`/api/data/nd${drill.period ? `?period=${encodeURIComponent(drill.period)}` : ""}`)
+    authFetch(`/api/data/nd${month ? `?period=${encodeURIComponent(month)}` : ""}`)
       .then((r) => r.json())
       .then((d) => {
         setRows(Array.isArray(d.rows) ? d.rows : []);
@@ -80,7 +82,7 @@ export default function NdPage() {
       })
       .catch(() => {})
       .finally(() => setFetching(false));
-  }, [user, drill.period]);
+  }, [user, month]);
 
   // Nothing ranged = no ND% to show (sync writes 0%), so leave those rows out
   // rather than list them as 0% and drag the average down.
@@ -115,7 +117,6 @@ export default function NdPage() {
   const chips: DrillChip[] = [
     ...(store ? [{ label: `Store: ${rows.find((r) => r.siteCode === store)?.storeName || store}`, onClear: () => setStore("") }] : []),
     ...(product ? [{ label: `Product: ${rows.find((r) => r.productId === product)?.productName || product}`, onClear: () => setProduct("") }] : []),
-    ...(drill.period ? [{ label: `Month: ${drill.period}`, onClear: clearPeriod }] : []),
   ];
   // A channel row drills to that channel's stores (ND keeps no store × SKU lines).
   const onRowClick = level === "channel" ? (r: NdDetailRow) => { setChannel(r.channelName); setLevel("store"); } : undefined;
@@ -182,6 +183,7 @@ export default function NdPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
+        <MonthSelect value={month} onChange={(p) => { setFetching(true); setMonth(p); }} />
         <LevelSelect value={level} onChange={(l) => setLevel(l as Level)} detail={false} />
         <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All KAMs</option>
