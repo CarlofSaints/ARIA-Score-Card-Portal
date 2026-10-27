@@ -301,8 +301,9 @@ export default function RangingPage() {
             No ranging loaded yet.
           </div>
         ) : (
+          <div className="overflow-x-auto max-h-[70vh]">
           <table className="w-full text-sm">
-            <thead className="bg-[var(--color-bg)] text-left text-[var(--color-text-muted)]">
+            <thead className="sticky top-0 z-10 bg-[var(--color-bg)] text-left text-[var(--color-text-muted)]">
               <tr>
                 <th className="px-4 py-2 font-semibold">Channel</th>
                 <th className="px-4 py-2 font-semibold text-right">Ranged combos</th>
@@ -340,6 +341,7 @@ export default function RangingPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
