@@ -340,7 +340,8 @@ export async function GET(
           oos: present.oos ? avg(chFor("oos").map((id) => at(oosData, id))) : null,
         };
         const score = buildEntityScore({
-          entityId: m.id,
+          // The KAM's user id: what the KAM filter on the detail pages uses (drill-down links).
+          entityId: m.camUserId || m.id,
           entityName: m.camName,
           entityType: "cam",
           period,

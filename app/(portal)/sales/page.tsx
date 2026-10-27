@@ -8,6 +8,8 @@ import { useColumnWidths, Th } from "@/components/resizableColumns";
 import type { SalesDetailRow, MonthSales } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
 import { useBarcodes } from "@/lib/useBarcodes";
+import { readDrillParams } from "@/lib/drill";
+import DrillChips, { clearPeriod, type DrillChip } from "@/components/DrillChips";
 
 // Granularity. "detail" = store×SKU combos; the rest are the rolled-up aggregates.
 type Level = "detail" | "channel" | "store" | "product";
@@ -48,9 +50,15 @@ export default function SalesPage() {
 
   const [view, setView] = useState<string>("ytd"); // "ytd" | "YYYY-MM"
   const [search, setSearch] = useState("");
-  const [channel, setChannel] = useState("all");
-  const [level, setLevel] = useState<Level>("store");
-  const { kams, kamId, setKamId, matches } = useKamFilter();
+  // Drill-down: a scorecard link can preset the level, channel, store, product, KAM, month.
+  const [drill] = useState(readDrillParams);
+  const [channel, setChannel] = useState(drill.channel ?? "all");
+  const [level, setLevel] = useState<Level>(
+    (["channel", "store", "product", "detail"] as const).find((l) => l === drill.level) ?? "store"
+  );
+  const [store, setStore] = useState(drill.store ?? "");
+  const [product, setProduct] = useState(drill.product ?? "");
+  const { kams, kamId, setKamId, matches } = useKamFilter(drill.kam);
   const barcodes = useBarcodes();
   const [sortKey, setSortKey] = useState<ColKey>("value");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -63,7 +71,7 @@ export default function SalesPage() {
 
   useEffect(() => {
     if (!user) return;
-    authFetch("/api/data/sales")
+    authFetch(`/api/data/sales${drill.period ? `?period=${encodeURIComponent(drill.period)}` : ""}`)
       .then((r) => r.json())
       .then((d) => {
         setRows(Array.isArray(d.rows) ? d.rows : []);
@@ -72,7 +80,7 @@ export default function SalesPage() {
       })
       .catch(() => {})
       .finally(() => setFetching(false));
-  }, [user]);
+  }, [user, drill.period]);
 
   const isYtd = view === "ytd";
   const mrow = (r: SalesDetailRow) => r.months?.[view];
@@ -133,10 +141,28 @@ export default function SalesPage() {
       if (!matches(chForKam, brForKam)) return false;
       if (q && !rowText(r).toLowerCase().includes(q)) return false;
       if (view !== "ytd" && !r.months?.[view]) return false;
+      if (store && r.siteCode !== store) return false;
+      if (product && r.productId !== product) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseRows, search, channel, level, matches, view, barcodes]);
+  }, [baseRows, search, channel, level, matches, view, barcodes, store, product]);
+
+  const all = [...rows, ...combos];
+  const chips: DrillChip[] = [
+    ...(store ? [{ label: `Store: ${all.find((r) => r.siteCode === store)?.storeName || store}`, onClear: () => setStore("") }] : []),
+    ...(product ? [{ label: `Product: ${all.find((r) => r.productId === product)?.productName || product}`, onClear: () => setProduct("") }] : []),
+    ...(drill.period ? [{ label: `Month: ${drill.period}`, onClear: clearPeriod }] : []),
+  ];
+  // One level down from a clicked row: channel → its stores; store or product → its store × SKU lines.
+  const onRowClick =
+    level === "detail"
+      ? undefined
+      : (r: SalesDetailRow) => {
+          if (level === "channel") { setChannel(r.channelName); setLevel("store"); }
+          else if (level === "store") { setStore(r.siteCode); setLevel("detail"); }
+          else { setProduct(r.productId); setLevel("detail"); }
+        };
 
   const maxDates = useMemo(
     () => Array.from(new Set(filtered.map((r) => r.maxDate).filter(Boolean))).sort() as string[],
@@ -316,6 +342,8 @@ export default function SalesPage() {
         </select>
       </div>
 
+      <DrillChips chips={chips} />
+
       {fetching ? (
         <div className="text-center py-12 text-[var(--color-text-muted)]">Loading…</div>
       ) : rows.length === 0 ? (
@@ -347,7 +375,12 @@ export default function SalesPage() {
               </thead>
               <tbody>
                 {sorted.map((r, i) => (
-                  <tr key={`${r.entityId}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
+                  <tr key={`${r.entityId}|${i}`}
+                    onClick={onRowClick ? () => onRowClick(r) : undefined}
+                    onKeyDown={onRowClick ? (e) => e.key === "Enter" && onRowClick(r) : undefined}
+                    tabIndex={onRowClick ? 0 : undefined}
+                    title={onRowClick ? "Click to see what is behind this row" : undefined}
+                    className={`border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]${onRowClick ? " cursor-pointer" : ""}`}>
                     {cols.map((c) => (
                       <td key={c} className={cellClass(c, r)}>{cellText(c, r)}</td>
                     ))}

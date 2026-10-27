@@ -9,6 +9,8 @@ import type { OosDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
 import RollUpTable, { LevelSelect, type RollLevel } from "@/components/RollUpTable";
 import { useBarcodes } from "@/lib/useBarcodes";
+import { useLineDrill } from "@/lib/useLineDrill";
+import DrillChips from "@/components/DrillChips";
 
 type SortKey = "storeName" | "subChannel" | "brand" | "productName" | "barcode";
 
@@ -30,10 +32,9 @@ export default function OosPage() {
 
   const [storeSearch, setStoreSearch] = useState("");
   const [brand, setBrand] = useState("all");
-  const [channel, setChannel] = useState("all");
-  const [level, setLevel] = useState<RollLevel>("channel");
+  const { drill, level, setLevel, channel, setChannel, keep, onDrill, chips, periodQuery } = useLineDrill();
   const barcodes = useBarcodes();
-  const { kams, kamId, setKamId, matches } = useKamFilter();
+  const { kams, kamId, setKamId, matches } = useKamFilter(drill.kam);
   const [sortKey, setSortKey] = useState<SortKey>("storeName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -47,7 +48,7 @@ export default function OosPage() {
 
   useEffect(() => {
     if (!user) return;
-    authFetch("/api/data/oos")
+    authFetch(`/api/data/oos${periodQuery}`)
       .then((r) => r.json())
       .then((d) => {
         setRows(Array.isArray(d.rows) ? d.rows : []);
@@ -55,7 +56,7 @@ export default function OosPage() {
       })
       .catch(() => {})
       .finally(() => setFetching(false));
-  }, [user]);
+  }, [user, periodQuery]);
 
   // DC-ONLINE is excluded entirely from OOS; DC is split into its own grid.
   const baseRows = useMemo(
@@ -82,9 +83,9 @@ export default function OosPage() {
       if (brand !== "all" && r.brand !== brand) return false;
       if (channel !== "all" && r.channelName !== channel) return false;
       if (!matches(r.channelName, r.brand)) return false;
-      return true;
+      return keep(r);
     });
-  }, [baseRows, storeSearch, brand, channel, matches]);
+  }, [baseRows, storeSearch, brand, channel, matches, keep]);
 
   const sortRows = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -146,7 +147,7 @@ export default function OosPage() {
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
-        <LevelSelect value={level} onChange={setLevel} />
+        <LevelSelect value={level} onChange={(l: RollLevel) => setLevel(l)} />
         <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All KAMs</option>
           {kams.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
@@ -161,6 +162,8 @@ export default function OosPage() {
         </select>
       </div>
 
+      <DrillChips chips={chips(baseRows)} />
+
       {fetching ? (
         <div className="text-center py-12 text-[var(--color-text-muted)]">Loading…</div>
       ) : rows.length === 0 ? (
@@ -171,7 +174,7 @@ export default function OosPage() {
         </div>
       ) : (
         <>
-          {level !== "detail" ? <RollUpTable rows={mainRows} level={level} itemLabel="OOS items" /> : <Grid
+          {level !== "detail" ? <RollUpTable rows={mainRows} level={level} itemLabel="OOS items" onDrill={onDrill} /> : <Grid
             rows={mainRows}
             totalCount={mainRows.length}
             widths={widths}
@@ -186,7 +189,7 @@ export default function OosPage() {
               <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">
                 Distribution Centres (DC)
               </h2>
-              {level !== "detail" ? <RollUpTable rows={dcRows} level={level} itemLabel="OOS items" /> : <Grid
+              {level !== "detail" ? <RollUpTable rows={dcRows} level={level} itemLabel="OOS items" onDrill={onDrill} /> : <Grid
                 rows={dcRows}
                 totalCount={dcRows.length}
                 widths={widths}

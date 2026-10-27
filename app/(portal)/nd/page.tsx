@@ -9,6 +9,8 @@ import type { NdDetailRow } from "@/lib/types";
 import { useKamFilter } from "@/lib/useKamFilter";
 import { LevelSelect } from "@/components/RollUpTable";
 import { useBarcodes } from "@/lib/useBarcodes";
+import { readDrillParams } from "@/lib/drill";
+import DrillChips, { clearPeriod, type DrillChip } from "@/components/DrillChips";
 
 type Level = NdDetailRow["level"];
 type SortKey = "name" | "barcode" | "channelName" | "subChannel" | "brand" | "ndPercent" | "rangedCount" | "totalCount";
@@ -46,11 +48,17 @@ export default function NdPage() {
   const [fetching, setFetching] = useState(true);
 
   const [search, setSearch] = useState("");
-  const [channel, setChannel] = useState("all");
+  // Drill-down: a scorecard link can preset the level, channel, store, product, KAM, month.
+  const [drill] = useState(readDrillParams);
+  const [channel, setChannel] = useState(drill.channel ?? "all");
   const [brand, setBrand] = useState("all");
-  const [level, setLevel] = useState<Level>("channel");
+  const [level, setLevel] = useState<Level>(
+    drill.level === "store" || drill.level === "product" ? drill.level : "channel"
+  );
+  const [store, setStore] = useState(drill.store ?? "");
+  const [product, setProduct] = useState(drill.product ?? "");
   const barcodes = useBarcodes();
-  const { kams, kamId, setKamId, matches } = useKamFilter();
+  const { kams, kamId, setKamId, matches } = useKamFilter(drill.kam);
   const [sortKey, setSortKey] = useState<SortKey>("ndPercent");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -64,7 +72,7 @@ export default function NdPage() {
 
   useEffect(() => {
     if (!user) return;
-    authFetch("/api/data/nd")
+    authFetch(`/api/data/nd${drill.period ? `?period=${encodeURIComponent(drill.period)}` : ""}`)
       .then((r) => r.json())
       .then((d) => {
         setRows(Array.isArray(d.rows) ? d.rows : []);
@@ -72,7 +80,7 @@ export default function NdPage() {
       })
       .catch(() => {})
       .finally(() => setFetching(false));
-  }, [user]);
+  }, [user, drill.period]);
 
   // Nothing ranged = no ND% to show (sync writes 0%), so leave those rows out
   // rather than list them as 0% and drag the average down.
@@ -97,9 +105,19 @@ export default function NdPage() {
       if (brand !== "all" && r.brand && r.brand !== brand) return false;
       if (!matches(r.channelName || undefined, r.brand || undefined)) return false;
       if (q && !`${entityName(r)} ${r.productId} ${barcodes[r.productId] ?? ""}`.toLowerCase().includes(q)) return false;
+      if (store && r.siteCode !== store) return false;
+      if (product && r.productId !== product) return false;
       return true;
     });
-  }, [baseRows, search, channel, brand, matches, barcodes]);
+  }, [baseRows, search, channel, brand, matches, barcodes, store, product]);
+
+  const chips: DrillChip[] = [
+    ...(store ? [{ label: `Store: ${rows.find((r) => r.siteCode === store)?.storeName || store}`, onClear: () => setStore("") }] : []),
+    ...(product ? [{ label: `Product: ${rows.find((r) => r.productId === product)?.productName || product}`, onClear: () => setProduct("") }] : []),
+    ...(drill.period ? [{ label: `Month: ${drill.period}`, onClear: clearPeriod }] : []),
+  ];
+  // A channel row drills to that channel's stores (ND keeps no store × SKU lines).
+  const onRowClick = level === "channel" ? (r: NdDetailRow) => { setChannel(r.channelName); setLevel("store"); } : undefined;
 
   // A sort column hidden by the current grain falls back to ND %.
   const activeSort: SortKey = LEVEL_COLS[level].includes(sortKey) ? sortKey : "ndPercent";
@@ -179,6 +197,8 @@ export default function NdPage() {
         </select>}
       </div>
 
+      <DrillChips chips={chips} />
+
       {fetching ? (
         <div className="text-center py-12 text-[var(--color-text-muted)]">Loading…</div>
       ) : rows.length === 0 ? (
@@ -189,11 +209,11 @@ export default function NdPage() {
         </div>
       ) : (
         <>
-          <Grid rows={mainRows} barcodes={barcodes} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
+          <Grid rows={mainRows} onRowClick={onRowClick} barcodes={barcodes} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
           {dcRows.length > 0 && (
             <div className="mt-8">
               <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">Distribution Centres (DC)</h2>
-              <Grid rows={dcRows} barcodes={barcodes} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
+              <Grid rows={dcRows} onRowClick={onRowClick} barcodes={barcodes} cols={cols} widths={widths} startResize={startResize} totalWidth={totalWidth(cols.map((c) => c.key))} sortKey={activeSort} sortDir={sortDir} onSort={toggleSort} />
             </div>
           )}
         </>
@@ -203,9 +223,10 @@ export default function NdPage() {
 }
 
 function Grid({
-  rows, barcodes, cols, widths, startResize, totalWidth, sortKey, sortDir, onSort,
+  rows, onRowClick, barcodes, cols, widths, startResize, totalWidth, sortKey, sortDir, onSort,
 }: {
   rows: NdDetailRow[];
+  onRowClick?: (r: NdDetailRow) => void;
   barcodes: Record<string, string>;
   cols: typeof COLS;
   widths: Record<string, number>;
@@ -234,7 +255,12 @@ function Grid({
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={`${r.level}|${entityName(r)}|${i}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
+              <tr key={`${r.level}|${entityName(r)}|${i}`}
+                onClick={onRowClick ? () => onRowClick(r) : undefined}
+                onKeyDown={onRowClick ? (e) => e.key === "Enter" && onRowClick(r) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                title={onRowClick ? "Click to see this channel's stores" : undefined}
+                className={`border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]${onRowClick ? " cursor-pointer" : ""}`}>
                 {cols.map((c) => <td key={c.key} className={`px-3 py-2 text-[var(--color-text)] ${c.align === "right" ? "text-right" : "truncate"}${c.key === "name" || c.key === "ndPercent" ? " font-medium" : ""}`}>{cell(c.key, r, barcodes)}</td>)}
               </tr>
             ))}

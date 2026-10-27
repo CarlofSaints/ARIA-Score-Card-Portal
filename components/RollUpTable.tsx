@@ -81,7 +81,15 @@ export function LevelSelect({ value, onChange, detail = true }: { value: RollLev
   );
 }
 
-export default function RollUpTable({ rows, level, itemLabel, showSoh = false }: { rows: RollRow[]; level: Exclude<RollLevel, "detail">; itemLabel: string; showSoh?: boolean }) {
+export type { Agg as RollUpRow };
+
+export default function RollUpTable({ rows, level, itemLabel, showSoh = false, onDrill }: {
+  rows: RollRow[];
+  level: Exclude<RollLevel, "detail">;
+  itemLabel: string;
+  showSoh?: boolean;
+  onDrill?: (row: Agg) => void; // click a row to go one level down
+}) {
   const [sortKey, setSortKey] = useState<ColKey>("items");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const { widths, startResize, totalWidth } = useColumnWidths(WIDTH);
@@ -129,9 +137,14 @@ export default function RollUpTable({ rows, level, itemLabel, showSoh = false }:
           </thead>
           <tbody>
             {sorted.map((r) => (
-              <tr key={r.key} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]">
+              <tr key={r.key}
+                onClick={onDrill ? () => onDrill(r) : undefined}
+                onKeyDown={onDrill ? (e) => e.key === "Enter" && onDrill(r) : undefined}
+                tabIndex={onDrill ? 0 : undefined}
+                title={onDrill ? "Click to see what is behind this row" : undefined}
+                className={`border-t border-[var(--color-border)] hover:bg-[var(--color-bg)]${onDrill ? " cursor-pointer" : ""}`}>
                 {cols.map((c, i) => (
-                  <td key={c} className={`px-3 py-2 text-[var(--color-text)] ${NUM.has(c) ? "text-right" : "truncate"}${i === 0 ? " font-medium" : ""}`}>
+                  <td key={c} className={`px-3 py-2 ${i === 0 && onDrill ? "text-[var(--color-primary)] underline-offset-2 hover:underline" : "text-[var(--color-text)]"} ${NUM.has(c) ? "text-right" : "truncate"}${i === 0 ? " font-medium" : ""}`}>
                     {NUM.has(c) ? (r[c] as number).toLocaleString("en-ZA") : (r[c] as string) || (c === "storeName" ? r.siteCode : "—")}
                   </td>
                 ))}
