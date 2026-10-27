@@ -11,6 +11,7 @@ import RollUpTable, { LevelSelect } from "@/components/RollUpTable";
 import { useBarcodes } from "@/lib/useBarcodes";
 import { useLineDrill } from "@/lib/useLineDrill";
 import DrillChips from "@/components/DrillChips";
+import MonthSelect from "@/components/MonthSelect";
 
 type SortKey = "storeName" | "subChannel" | "brand" | "productName" | "barcode";
 
@@ -32,7 +33,7 @@ export default function OosPage() {
 
   const [storeSearch, setStoreSearch] = useState("");
   const [brand, setBrand] = useState("all");
-  const { drill, level, setLevel, channel, setChannel, keep, onDrill, chips, periodQuery } = useLineDrill();
+  const { drill, level, setLevel, channel, setChannel, keep, onDrill, chips, period: month, setPeriod: setMonth, periodQuery } = useLineDrill();
   const barcodes = useBarcodes();
   const { kams, kamId, setKamId, matches } = useKamFilter(drill.kam);
   const [sortKey, setSortKey] = useState<SortKey>("storeName");
@@ -147,6 +148,7 @@ export default function OosPage() {
           onChange={(e) => setStoreSearch(e.target.value)}
           className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm min-w-[220px] flex-1"
         />
+        <MonthSelect value={month} onChange={(p) => { setFetching(true); setMonth(p); }} />
         <LevelSelect value={level} onChange={setLevel} />
         <select value={kamId} onChange={(e) => setKamId(e.target.value)} className="px-3 py-2 rounded-lg border border-[var(--color-border)] text-sm bg-white">
           <option value="all">All KAMs</option>

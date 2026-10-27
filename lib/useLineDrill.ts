@@ -2,7 +2,6 @@ import { useCallback, useState } from "react";
 import { readDrillParams } from "./drill";
 import { provinceName } from "./provinceScores";
 import type { DrillChip } from "@/components/DrillChips";
-import { clearPeriod } from "@/components/DrillChips";
 
 const LEVELS = ["channel", "store", "product", "detail"] as const;
 type Level = (typeof LEVELS)[number];
@@ -30,6 +29,7 @@ export function useLineDrill() {
   const [store, setStore] = useState(drill.store ?? "");
   const [product, setProduct] = useState(drill.product ?? "");
   const [province, setProvince] = useState(drill.province ?? "");
+  const [period, setPeriod] = useState(drill.period ?? ""); // "" = current month
 
   const keep = useCallback(
     (r: LineRow) =>
@@ -57,11 +57,10 @@ export function useLineDrill() {
       out.push({ label: `Product: ${name}`, onClear: () => setProduct("") });
     }
     if (province) out.push({ label: `Province: ${province}`, onClear: () => setProvince("") });
-    if (drill.period) out.push({ label: `Month: ${drill.period}`, onClear: clearPeriod });
     return out;
   };
 
-  const periodQuery = drill.period ? `?period=${encodeURIComponent(drill.period)}` : "";
+  const periodQuery = period ? `?period=${encodeURIComponent(period)}` : "";
 
-  return { drill, level, setLevel, channel, setChannel, keep, onDrill, chips, periodQuery };
+  return { drill, level, setLevel, channel, setChannel, keep, onDrill, chips, period, setPeriod, periodQuery };
 }
