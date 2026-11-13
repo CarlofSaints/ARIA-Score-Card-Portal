@@ -40,7 +40,8 @@ const COLS: { key: SortKey; label: string; width: number; align?: "right" | "cen
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
+  // SQL fills "no date" with 1900-01-01; show blank, not a fake date
+  if (isNaN(d.getTime()) || d.getFullYear() <= 1900) return "—";
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
