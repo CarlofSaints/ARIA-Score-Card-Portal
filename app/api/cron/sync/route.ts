@@ -3,8 +3,9 @@ import { noCacheHeaders } from "@/lib/auth";
 import { getAllTenants } from "@/lib/tenantConfig";
 import { runSyncForTenant } from "@/lib/runSync";
 
-// A full multi-tenant sync (incl. the slow phantom SP) can run long; give it room.
-export const maxDuration = 300;
+// All 5 parts in one run take ~500-650s (Nov 2026); 300 timed out every cron.
+// 800 = Vercel Pro max. shortcut: if a full run passes ~750s, split cron by part.
+export const maxDuration = 800;
 
 /**
  * Scheduled sync. Vercel calls this hourly (see vercel.json) with the

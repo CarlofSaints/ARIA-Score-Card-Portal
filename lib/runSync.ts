@@ -966,7 +966,11 @@ export async function runSyncForTenant(
       ranged,
       soh: row.LatestSOH,
       date: row.Date,
-      dateLastSold: row["Date Last Sold"] ?? null,
+      // SQL uses 1900-01-01 as a "never sold" placeholder; store null instead
+      dateLastSold:
+        row["Date Last Sold"] && new Date(row["Date Last Sold"]).getFullYear() > 1900
+          ? row["Date Last Sold"]
+          : null,
     };
   });
 
