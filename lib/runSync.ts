@@ -869,8 +869,8 @@ export async function runSyncForTenant(
       productId: row["Product ID"],
       productName: product?.name || row["Product Description"] || row["Product ID"],
       brand: String(row["Product Brand"] ?? row.Brand ?? "") || product?.brand || "",
-      soh: 0,
-      date: "",
+      soh: row.LatestSOH ?? row.SOH ?? null,
+      date: String(row.Date ?? ""),
     };
   });
 

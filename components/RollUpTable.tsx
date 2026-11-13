@@ -15,7 +15,7 @@ export interface RollRow {
   productId: string;
   productName: string;
   brand: string;
-  soh?: number; // Phantom only: summed per group
+  soh?: number | null; // Phantom only: summed per group
   barcode?: string;
 }
 

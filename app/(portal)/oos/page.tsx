@@ -13,7 +13,7 @@ import { useLineDrill } from "@/lib/useLineDrill";
 import DrillChips from "@/components/DrillChips";
 import MonthSelect from "@/components/MonthSelect";
 
-type SortKey = "storeName" | "subChannel" | "brand" | "productName" | "barcode";
+type SortKey = "storeName" | "subChannel" | "brand" | "productName" | "barcode" | "soh";
 
 const COLS: { key: SortKey; label: string; width: number }[] = [
   { key: "storeName", label: "Store", width: 240 },
@@ -21,6 +21,7 @@ const COLS: { key: SortKey; label: string; width: number }[] = [
   { key: "productName", label: "Product", width: 320 },
   { key: "barcode", label: "Barcode", width: 150 },
   { key: "brand", label: "Brand", width: 160 },
+  { key: "soh", label: "SOH", width: 90 },
 ];
 
 export default function OosPage() {
@@ -176,7 +177,7 @@ export default function OosPage() {
         </div>
       ) : (
         <>
-          {level !== "detail" ? <RollUpTable rows={mainRows} level={level} itemLabel="OOS items" onDrill={onDrill} /> : <Grid
+          {level !== "detail" ? <RollUpTable rows={mainRows} level={level} itemLabel="OOS items" showSoh onDrill={onDrill} /> : <Grid
             rows={mainRows}
             totalCount={mainRows.length}
             widths={widths}
@@ -191,7 +192,7 @@ export default function OosPage() {
               <h2 className="text-lg font-semibold text-[var(--color-dark)] mb-2">
                 Distribution Centres (DC)
               </h2>
-              {level !== "detail" ? <RollUpTable rows={dcRows} level={level} itemLabel="OOS items" onDrill={onDrill} /> : <Grid
+              {level !== "detail" ? <RollUpTable rows={dcRows} level={level} itemLabel="OOS items" showSoh onDrill={onDrill} /> : <Grid
                 rows={dcRows}
                 totalCount={dcRows.length}
                 widths={widths}
@@ -246,6 +247,7 @@ function Grid({
                 <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.productName}</td>
                 <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.barcode || "—"}</td>
                 <td className="px-3 py-2 text-[var(--color-text)] truncate">{r.brand || "—"}</td>
+                <td className={`px-3 py-2 text-right tabular-nums ${(r.soh ?? 0) < 0 ? "text-red-600 font-medium" : "text-[var(--color-text)]"}`}>{r.soh == null ? "—" : r.soh.toLocaleString()}</td>
               </tr>
             ))}
           </tbody>

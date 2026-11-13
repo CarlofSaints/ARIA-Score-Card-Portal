@@ -407,7 +407,7 @@ export interface OosDetailRow {
   productId: string;
   productName: string;
   brand: string;
-  soh: number;
+  soh: number | null; // LatestSOH from the SP (can be negative); null if not sent
   date: string; // latest snapshot date (ISO); "" if absent
   barcode?: string; // filled on the page from data/barcodes.json
 }

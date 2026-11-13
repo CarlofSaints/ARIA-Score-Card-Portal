@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       productId: str(r.productId ?? r.SKU ?? r.ProductID),
       productName: str(r.productName ?? r["Product Description"] ?? r.SKU),
       brand: str(r.brand ?? r["Product Brand"] ?? ""),
-      soh: num(r.soh ?? r.SOH),
+      soh: (r.soh ?? r.SOH) == null ? null : num(r.soh ?? r.SOH),
       date: str(r.date ?? r.LatestDate ?? r.LatestDate ?? ""),
     }));
 

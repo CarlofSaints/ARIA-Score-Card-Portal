@@ -259,6 +259,9 @@ export interface SqlOosPnpRow {
   "Site Article Status": string | null;
   "Product Brand"?: string | null;
   Brand?: string | null;
+  LatestSOH?: number | null;
+  SOH?: number | null;
+  Date?: string | null;
 }
 
 // GetDataForCustomDev_PNP_NumericalDistribution returns ALL ranged site-SKUs
